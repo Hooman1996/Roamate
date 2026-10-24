@@ -1,147 +1,170 @@
 # Roamate implementation steps
 
-Every step is meant to be one small pull request. IDs are used for branch names (`m3-2-travel-estimates`). Details for each milestone are in [implementation-plan.md](implementation-plan.md).
+**Version:** 2 · 24 October 2026
 
-## Phase 1 — Foundation
+Every step starts only after its design is approved (M0) and its short step brief gets a go-ahead. Until Web Alpha (end of M10), steps are committed directly to `main`; after that, each step is a branch named after its ID (`m11-2-stop-locks`) and a pull request. Details for each milestone are in [implementation-plan.md](implementation-plan.md).
 
-### M0. Project foundation
-- [ ] **M0.1** Create the repository layout (`backend/`, `web/`, `data/`, `evals/`, `docs/`) and a README with run instructions
-- [ ] **M0.2** Set up the FastAPI backend skeleton with uv, settings from `.env`, and `GET /health`
-- [ ] **M0.3** Add Postgres with pgvector in Docker Compose and the database connection
-- [ ] **M0.4** Set up the React + Vite + TypeScript web app with Tailwind and React Router
-- [ ] **M0.5** Show backend health on the web home page (first call from web to API)
-- [ ] **M0.6** Add ruff, ESLint, Prettier and pre-commit hooks
-- [ ] **M0.7** Add GitHub Actions CI: lint and tests for backend and web on every pull request
-- [ ] **M0.8** Write ADR 0001: web first, simple stack, what we add later
+## Phase 1 — Design and approval
 
-## Phase 2 — Planning core, no AI yet
+### M0. Design and approval
+- [ ] **M0.1** Approve the implementation plan (version 2)
+- [ ] **M0.2** Design: infrastructure, shared services, conda environment and `.env` settings
+- [ ] **M0.3** Design: PostgreSQL schema (every table, column, index, with examples)
+- [ ] **M0.4** Design: Qdrant collections, vectors and payload indexes
+- [ ] **M0.5** Design: MinIO buckets, object layout and access rules
+- [ ] **M0.6** Design: domain data structures (TripBrief, Itinerary, Scenario, BudgetBreakdown, ValidationReport, ConstraintDelta)
+- [ ] **M0.7** Design: accounts, sessions, roles and sign-in flows
+- [ ] **M0.8** Design: model gateway config, provider list and fallback rules
+- [ ] **M0.9** Design: city ingestion stages, review rules and auto-approve thresholds
+- [ ] **M0.10** Design: LangGraph state, nodes, edges, pauses and revision graph
+- [ ] **M0.11** Design: API contract (endpoints, requests, responses, errors)
+- [ ] **M0.12** Design: web screens and navigation (wireframes)
+- [ ] **M0.13** Choose the launch city, candidate embedding models and the first evaluation cases
 
-### M1. Trip data model and database
-- [ ] **M1.1** Define the Pydantic schemas: TripBrief, Place, MediaAsset, Stop, Itinerary, Scenario, BudgetBreakdown, ValidationReport
-- [ ] **M1.2** Create the SQLAlchemy tables and the first Alembic migration
-- [ ] **M1.3** Add the demo user and seed script
-- [ ] **M1.4** Add sample trip briefs as test fixtures (normal, tight budget, low walking, impossible)
-- [ ] **M1.5** Generate TypeScript types for the web app from the OpenAPI schema
+## Phase 2 — Foundation and accounts
 
-### M2. Lisbon catalog
-- [ ] **M2.1** Write the OSM (Overpass) ingestion script for Lisbon places
-- [ ] **M2.2** Enrich places with Wikidata facts and Wikimedia Commons images with license and author
-- [ ] **M2.3** Produce the draft `data/cities/lisbon/places.yaml` for review
-- [ ] **M2.4** Hand-review about 150 places: visit time, interest tags, price, opening hours, hero image
-- [ ] **M2.5** Load the reviewed catalog into Postgres with field sources and dates
-- [ ] **M2.6** Add catalog data checks (coordinates, visit time, source, media license)
-- [ ] **M2.7** Add the catalog API (`/cities`, `/cities/{id}/places`, `/places/{id}`)
-- [ ] **M2.8** Build the Lab → Catalog page
+### M1. Foundation
+- [ ] **M1.1** Create the repository layout and README with run instructions
+- [ ] **M1.2** Add `environment.yml` for the conda env `roamate` (Python 3.12, Node.js 22)
+- [ ] **M1.3** Set up the FastAPI backend skeleton with settings from `.env` and `.env.example`
+- [ ] **M1.4** Add `infra/docker-compose.yml` with the same pinned images as the RagBot server
+- [ ] **M1.5** Add setup scripts for the `roamate` database and user, Qdrant collections and MinIO buckets
+- [ ] **M1.6** Add connection clients and a health endpoint for Postgres, Qdrant, MinIO, TEI and vLLM
+- [ ] **M1.7** Set up the React + Vite + TypeScript web app with Tailwind, React Router and bundled fonts and icons
+- [ ] **M1.8** Build the health page in the web app
+- [ ] **M1.9** Add a build check that fails on any external URL in the built web app
+- [ ] **M1.10** Add ruff, ESLint, Prettier and pre-commit hooks
+- [ ] **M1.11** Add GitHub Actions CI on every push to `main`
 
-### M3. Solver: one scenario
-- [ ] **M3.1** Write utility scoring from interest tags and curated score
-- [ ] **M3.2** Write travel estimates by mode (walk, metro, taxi) from distance
-- [ ] **M3.3** Write candidate selection: filters for city, opening days, price, exclusions
-- [ ] **M3.4** Port the OR-Tools model from `solver_example.py` to `planning/solver.py` on catalog data
-- [ ] **M3.5** Add opening hours by weekday, lunch break, must-dos, budget, walking cap and pace
-- [ ] **M3.6** Add deterministic test mode and solver tests on the sample briefs
+### M2. Accounts and login
+- [ ] **M2.1** Create the user and session tables and their migration
+- [ ] **M2.2** Add password hashing and session handling
+- [ ] **M2.3** Add register, sign in, sign out and current-user endpoints
+- [ ] **M2.4** Add user and admin roles and the admin creation command
+- [ ] **M2.5** Build the sign-up and sign-in pages and protected routes
+- [ ] **M2.6** Add auth tests (hashing, expiry, role checks on every admin route)
 
-### M4. Three scenarios, budget and validator
-- [ ] **M4.1** Define Budget, Balanced and Comfort parameter sets and the diversity rule
-- [ ] **M4.2** Report "no meaningfully different options" honestly when scenarios collapse
-- [ ] **M4.3** Write the budget breakdown with scope, categories and quoted/estimated/unknown labels
-- [ ] **M4.4** Write the independent validator
-- [ ] **M4.5** Add property-based validator tests with Hypothesis (planted violations)
-- [ ] **M4.6** Write infeasibility pre-checks with clear user choices
-- [ ] **M4.7** Add `POST /lab/solve` and `POST /lab/validate`
-- [ ] **M4.8** Build the Lab → Solver and Lab → Validator pages
+### M3. Core data layer
+- [ ] **M3.1** Write the Pydantic domain models from the approved design
+- [ ] **M3.2** Create migrations for city, ingestion, place, media, trip, version, job and LLM call tables
+- [ ] **M3.3** Add the Qdrant collection helpers (create, upsert, hybrid query)
+- [ ] **M3.4** Add the MinIO storage helpers (upload, read, serve through the backend)
+- [ ] **M3.5** Generate TypeScript types for the web app from the OpenAPI schema
+- [ ] **M3.6** Add test fixtures: sample places, briefs (normal, tight budget, low walking, impossible)
 
-## Phase 3 — First usable web app ("Web Alpha")
+## Phase 3 — Models and city data
 
-### M5. Planning API and jobs
-- [ ] **M5.1** Write the `plan_trip()` pipeline function with progress events
-- [ ] **M5.2** Add the planning job table and run jobs as background tasks
-- [ ] **M5.3** Add `POST /trips`, `GET /trips`, `GET /trips/{id}` and version endpoints
-- [ ] **M5.4** Add `GET /jobs/{id}` with status, events and result
-- [ ] **M5.5** Add API integration tests with a test database
+### M4. Model gateway
+- [ ] **M4.1** Load providers from `config/models.yaml` and keys from `.env`
+- [ ] **M4.2** Write the OpenAI-compatible client and ordered fallback with cool-down
+- [ ] **M4.3** Add structured output with Pydantic validation and one repair retry
+- [ ] **M4.4** Log every attempt to the `llm_call` table
+- [ ] **M4.5** Add the TEI embedding and reranker clients
+- [ ] **M4.6** Add gateway tests with fake providers (fail, timeout, 429, bad JSON)
+- [ ] **M4.7** Build the Lab → Models page
 
-### M6. Web app: plan, explore, save
-- [ ] **M6.1** Build the app shell, navigation and API client with TanStack Query
-- [ ] **M6.2** Build the new-trip step form with validation and the confirmation summary
-- [ ] **M6.3** Build the planning progress screen (polling the job)
-- [ ] **M6.4** Build the trip view with the scenario switcher
-- [ ] **M6.5** Build the Timeline tab
-- [ ] **M6.6** Build the Map tab with Leaflet, stops and day routes
-- [ ] **M6.7** Build the Budget tab with scope, labels and unknowns
-- [ ] **M6.8** Link selection across tabs and add the place details drawer
-- [ ] **M6.9** Build the My trips page and reopen saved trips
-- [ ] **M6.10** Add the first Playwright end-to-end test: plan, explore, reload
-- [ ] **M6.11** Run the Web Alpha check and record issues
+### M5. City data pipeline
+- [ ] **M5.1** Write the pipeline runner with resumable stages and `ingest_run` tracking
+- [ ] **M5.2** Write the Discover stage (Nominatim and Wikidata)
+- [ ] **M5.3** Write the Collect stage (Overpass and Wikidata) with raw data saved to MinIO
+- [ ] **M5.4** Write the Merge stage (OSM–Wikidata matching and duplicates)
+- [ ] **M5.5** Write the Enrich stage: Wikipedia summaries, Commons images with licenses, opening hours
+- [ ] **M5.6** Add LLM-estimated tags, visit times and price bands, marked as estimates
+- [ ] **M5.7** Write the Score stage (popularity and completeness)
+- [ ] **M5.8** Add the `ingest_city` command and stage tests on recorded data
 
-## Phase 4 — The AI layer
+### M6. City review and publishing
+- [ ] **M6.1** Build the Admin → Cities page with add city and stage progress
+- [ ] **M6.2** Build the Admin → Review page (bulk approve, edit, reject, gaps highlighted)
+- [ ] **M6.3** Add auto-approve rules for auto mode
+- [ ] **M6.4** Write the Publish stage: places and media to Postgres, vectors to Qdrant
+- [ ] **M6.5** Extract the city map file (PMTiles) and serve it with local map styles
+- [ ] **M6.6** Ingest, review and publish the launch city
+- [ ] **M6.7** Add a second city through the UI only and record what was needed
 
-### M7. AI trip intake
-- [ ] **M7.1** Write the LLM adapter with structured output, retries and a mock for tests
-- [ ] **M7.2** Add the run log for step timings, tokens and cost
-- [ ] **M7.3** Write free text → TripBrief extraction with versioned prompts
-- [ ] **M7.4** Add clarification questions for missing essentials (dates, budget, mobility)
-- [ ] **M7.5** Add `POST /intake/parse` and the free-text box that fills the form
-- [ ] **M7.6** Build the 30-case intake eval set and scoring script
-- [ ] **M7.7** Build the Lab → Intake and Lab → Runs pages
+## Phase 4 — Planning engine
 
-### M8. Smarter place search
-- [ ] **M8.1** Add place embeddings with a local model and a pgvector column
-- [ ] **M8.2** Add Postgres full-text search on names and descriptions
-- [ ] **M8.3** Combine results with rank fusion and re-rank into utility
-- [ ] **M8.4** Label 20–30 briefs with good candidate places
-- [ ] **M8.5** Measure recall@50 for tag-only, vector, keyword and hybrid search
-- [ ] **M8.6** Add `POST /lab/search` and the Lab → Search page
+### M7. Solver and scenarios
+- [ ] **M7.1** Write utility scoring from interest tags and popularity
+- [ ] **M7.2** Write travel estimates by mode (walk, metro, taxi) from distance
+- [ ] **M7.3** Port the OR-Tools model from `solver_example.py` to `planning/solver.py` on catalog data
+- [ ] **M7.4** Add opening hours by weekday, lunch, must-dos, budget, walking cap and pace
+- [ ] **M7.5** Add Budget, Balanced and Comfort parameter sets and the diversity rule
+- [ ] **M7.6** Add deterministic test mode and solver tests on the sample briefs
+- [ ] **M7.7** Build the Lab → Solver page
 
-### M9. Story, media and live context
-- [ ] **M9.1** Write "why this fits you" for each chosen stop (curation step)
-- [ ] **M9.2** Write day chapters grounded in stored descriptions and bound to the itinerary
-- [ ] **M9.3** Resolve media per stop with kind labels and credits
-- [ ] **M9.4** Add the Open-Meteo weather provider with forecast vs seasonal labels
-- [ ] **M9.5** Add the routing provider adapter (OpenRouteService) with caching and fallback to estimates
-- [ ] **M9.6** Add demo mode with recorded fixtures and a visible "Demo data" label
-- [ ] **M9.7** Build the Story tab linked to the other tabs
-- [ ] **M9.8** Check that a story or image failure never blocks the itinerary
+### M8. Validator, budget and search
+- [ ] **M8.1** Write the independent validator
+- [ ] **M8.2** Add property-based validator tests with Hypothesis
+- [ ] **M8.3** Write the budget breakdown with scope and quoted/estimated/unknown labels
+- [ ] **M8.4** Write the feasibility precheck with clear user choices
+- [ ] **M8.5** Write hybrid search (dense + BM25) with reranking feeding utility
+- [ ] **M8.6** Label 20–30 briefs with good candidate places
+- [ ] **M8.7** Compare embedding models and search methods by recall@50 and pick the model
+- [ ] **M8.8** Build the Lab → Validator and Lab → Search pages
 
-### M10. Workflow orchestration with LangGraph
-- [ ] **M10.1** Write ADR: when and why we adopt LangGraph
-- [ ] **M10.2** Convert `plan_trip()` steps into graph nodes with the same behavior
-- [ ] **M10.3** Add Postgres checkpoints and resume after a backend restart
-- [ ] **M10.4** Add the confirm-your-brief pause (human in the loop)
-- [ ] **M10.5** Run the three scenarios in parallel
-- [ ] **M10.6** Add the repair loop driven by validator results (max 2 tries)
-- [ ] **M10.7** Show infeasibility choices in the web app
+## Phase 5 — AI workflow and web app ("Web Alpha")
 
-## Phase 5 — Revise, approve, harden ("Web Beta")
+### M9. LangGraph planning workflow
+- [ ] **M9.1** Define the graph state and the form-path graph (precheck, retrieve, solve, validate, save)
+- [ ] **M9.2** Add Postgres checkpoints and resume after restart
+- [ ] **M9.3** Write the job runner and job API (start, status, events, resume)
+- [ ] **M9.4** Add the intake node (free text → TripBrief) with versioned prompts
+- [ ] **M9.5** Add the clarify and confirm pauses
+- [ ] **M9.6** Run the three scenarios in parallel
+- [ ] **M9.7** Add the validate and repair loop (max 2 tries)
+- [ ] **M9.8** Add the weather provider (forecast vs seasonal, cached)
+- [ ] **M9.9** Add the curation node ("why this fits you")
+- [ ] **M9.10** Add the story node, bound to the validated itinerary
+- [ ] **M9.11** Build the 30-case intake eval set and scoring script
+- [ ] **M9.12** Build the Lab → Intake and Lab → Runs pages
 
-### M11. Revision, versions and approval
-- [ ] **M11.1** Write change request → structured constraint delta (LLM)
+### M10. Web app: plan, explore, save
+- [ ] **M10.1** Build the app shell, navigation and API client with TanStack Query
+- [ ] **M10.2** Build the new-trip page: free-text box and step form
+- [ ] **M10.3** Build the clarify and confirm screens
+- [ ] **M10.4** Build the planning progress screen
+- [ ] **M10.5** Build the trip view with the scenario switcher
+- [ ] **M10.6** Build the Story tab with media labels and credits
+- [ ] **M10.7** Build the Timeline tab
+- [ ] **M10.8** Build the Map tab with MapLibre and the city's local tiles
+- [ ] **M10.9** Build the Budget tab with scope, labels and unknowns
+- [ ] **M10.10** Link selection across tabs and add the place details drawer
+- [ ] **M10.11** Build the My trips page
+- [ ] **M10.12** Add the Playwright end-to-end test: sign in, plan, explore, reopen
+- [ ] **M10.13** Run the Web Alpha check, tag `v0.1-alpha`, switch to branches and pull requests
+
+## Phase 6 — Revise, evaluate, deploy ("Web Beta")
+
+### M11. Revision and approval
+- [ ] **M11.1** Add the change parser node (change request → ConstraintDelta)
 - [ ] **M11.2** Add stop locks in the solver
-- [ ] **M11.3** Add the revise job: re-solve, validate, save a new version
+- [ ] **M11.3** Build the revision graph: re-solve, validate, save a new version
 - [ ] **M11.4** Compute the "what changed" diff (stops, time, walking, cost)
 - [ ] **M11.5** Build the revision panel, quick-change chips and diff view
 - [ ] **M11.6** Add approve and version history in the web app
-- [ ] **M11.7** Add outbound booking links with honest states (suggested, opened, never auto-booked)
-- [ ] **M11.8** Add the Playwright test: "less walking on day 2" → approve → reload
+- [ ] **M11.7** Add outbound booking links with honest states
+- [ ] **M11.8** Add the Playwright test: "less walking on day 2" → approve → reopen
 
-### M12. Evaluation, hardening and test deployment
+### M12. Evaluation, hardening and deployment
 - [ ] **M12.1** Build the persona generator and simulated-user runner
 - [ ] **M12.2** Add graders: deterministic checks and an LLM judge with a rubric
-- [ ] **M12.3** Add the fixed regression suite to CI and a manual full-eval workflow
+- [ ] **M12.3** Add the regression suite to CI and a manual full-eval workflow
 - [ ] **M12.4** Add metamorphic solver tests
 - [ ] **M12.5** Measure p50/p95 time to first result, completion and revision
-- [ ] **M12.6** Add cost limits per run and friendly errors for every provider failure
+- [ ] **M12.6** Track usage and failures per provider; friendly errors for every failure
 - [ ] **M12.7** Run an accessibility pass (keyboard, contrast, screen reader, reduced motion)
-- [ ] **M12.8** Decide on Redis/Celery from measurements and add only if needed
-- [ ] **M12.9** Deploy to one small server with HTTPS and a shared password
+- [ ] **M12.8** Decide on a separate worker or Celery from measurements; add only if needed
+- [ ] **M12.9** Deploy the backend and web app on the server next to the existing services
 - [ ] **M12.10** Build the Lab → Evals page
 - [ ] **M12.11** Run the Web Beta with a few testers and collect feedback
 
-## Phase 6 — Mobile app
+## Phase 7 — Mobile app
 
 ### M13. Mobile app core
-- [ ] **M13.1** Write ADR: mobile stack and map library
+- [ ] **M13.1** Design: mobile screens, navigation and map library (for approval)
 - [ ] **M13.2** Move shared TypeScript code (API types, formatting, labels) into `shared/`
-- [ ] **M13.3** Set up the Expo app with Expo Router and the API client
+- [ ] **M13.3** Set up the Expo app with Expo Router, sign-in and the API client
 - [ ] **M13.4** Build trip intake on mobile
 - [ ] **M13.5** Build planning progress on mobile
 - [ ] **M13.6** Build the trip view tabs: Story, Timeline, Map, Budget

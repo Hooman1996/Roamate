@@ -1,368 +1,504 @@
 # Roamate implementation plan
 
-**Date:** 24 October 2026
-**Builds on:** `Roamate_Product_Vision_and_Business_Review_Brief.md` (18 Oct 2026), `pre-build-decisions.md` and `solver-retrieval-evaluation.md` (20 Oct 2026), and the runnable `solver_example.py`.
+**Version:** 2 · 24 October 2026
+**Builds on:** `Roamate_Product_Vision_and_Business_Review_Brief.md` (18 Oct 2026), `pre-build-decisions.md` and `solver-retrieval-evaluation.md` (20 Oct 2026), the runnable `solver_example.py`, and hooman's 11 changes of 24 Oct 2026.
 **Companion files:** [implementation-steps.md](implementation-steps.md) (every step title as a checklist) and the visual roadmap.
 
 ---
 
 ## 1. What we are building first
 
-The first version is a **web app** that one person (a built-in demo user, no login) can use in a browser to:
+The first version is a **web app** with real user accounts. A signed-in user can:
 
-1. Enter a trip: city, dates, travelers, budget, interests, pace, must-do places, walking limit.
+1. Enter a trip, either through a form or by describing it in free text: city, dates, travelers, budget, interests, pace, must-do places, walking limit.
 2. Get up to three checked scenarios (**Budget**, **Balanced**, **Comfort**) built by a solver and verified by an independent validator.
 3. Explore the chosen plan in four linked views: **Story**, **Timeline**, **Map**, **Budget**.
 4. Ask for one kind of change ("less walking on day 2", "keep this museum", "slower afternoon"), see what changed, and approve a version.
-5. Close the browser, come back, and find the saved trip with its version history.
+5. Sign out, sign back in, and find the saved trip with its version history.
 
-Next to the traveler screens, the web app has a **Lab** section for us, the builders, where each part of the system can be tried on its own: browse the catalog, run the solver with custom weights, test search, test the AI intake, and read evaluation results. That is how we "use and test different aspects and features" without guessing.
+An **admin** user also gets:
 
-The **mobile app** comes after the web app works and has been tested. Because all trip logic lives in the backend, the mobile app is a second screen layer on the same API, not a second product.
+- **Cities**: add a new city, watch the automatic data collection, review the places it found, and publish the city.
+- **Lab**: try each part of the system on its own (models, search, solver, validator, AI intake, graph runs, evaluations).
+
+The **mobile app** comes after the web app works and has been tested. All trip logic lives in the backend, so the mobile app is a second screen layer on the same API.
 
 ### Success test for the web version
 
-The brief's demo scenario, run in a browser: a user enters a 3-day Lisbon trip for two with a ground budget, receives checked scenarios with real images, explores map and costs, asks for less walking on day 2, approves the revision, and reopens it after restarting the app. Every number on screen comes from the solver or the budget calculator, and the validator reports zero violations.
+The brief's demo scenario, run in a browser: a user signs in, enters a 3-day trip for two with a ground budget, receives checked scenarios with real images, explores the map and costs, asks for less walking on day 2, approves the revision, signs out, signs in again and reopens it. Every number on screen comes from the solver or the budget calculator, and the validator reports zero violations. An admin can add a second city through the Cities screen without writing code.
 
 ---
 
-## 2. Keeping it simple
+## 2. What changed in version 2
 
-The earlier design documents describe the full target architecture. To keep the code understandable, we start with the smallest version of each piece and add the heavier tool only when a real need appears. Each addition is a planned step, not a surprise.
+| # | Change requested | Where it shows up in this plan |
+| --- | --- | --- |
+| 1 | PostgreSQL for relational data, Qdrant for vectors, MinIO for objects | §4 infrastructure, §7 data design. pgvector is no longer used |
+| 2 | LangGraph from the start | §10. The planning workflow is a LangGraph graph from its first version (M9) |
+| 3 | Ready database images, as in RagBot | §4. Roamate connects to the services already running for RagBot, with its own database, collections and buckets |
+| 4 | Every step approved before implementation | §13. M0 is a full design phase; nothing is coded until its design is approved, and each step gets a go-ahead |
+| 5 | Users and login from the start | M2. Email and password accounts with user and admin roles |
+| 6 | Free-tier API keys or local vLLM, with fallback | §8. One model gateway with an ordered list of providers that falls back to the next one on failure; embeddings via TEI |
+| 7 | A stage to collect cities and places, with easy semi-automatic ingestion | §9, M5 and M6. A staged city pipeline with a review queue and an auto-approve mode |
+| 8 | Conda environment named `roamate` | §5. `environment.yml` replaces uv |
+| 9 | Embedding model to be chosen | §8. A measured comparison of candidate models in M8 |
+| 10 | All frontend files local, no internet needed for them | §11. Bundled packages and fonts, local map tiles, images served from MinIO, and a build check |
+| 11 | Work on `main` for the early phases | §13. Direct commits to `main` until Web Alpha, then branches and pull requests |
 
-| Area | Start with | Add later, only when needed | Trigger to add it |
-| --- | --- | --- | --- |
-| Background work | A `planning_job` table and a FastAPI background task; the web app polls the job every second | Redis + Celery worker | Plans take long enough that API restarts lose runs, or we need several workers (M12) |
-| Live progress | Polling `GET /jobs/{id}` | Server-Sent Events | Polling feels laggy in testing |
-| AI orchestration | A plain Python function `plan_trip()` that calls steps in order | LangGraph graph with checkpoints | Once we have a clarification pause, a repair loop and revisions (M10) |
-| Geography | Distances computed in Python (haversine × detour factor), one city of ~150–300 places | PostGIS | More cities or radius queries become slow |
-| Travel times | Estimates by mode from distance, labeled "estimated" | A routing provider (OpenRouteService) behind an adapter | M9, once the core works |
-| Search | SQL filters + interest-tag scoring | pgvector + full-text hybrid search | M8 |
-| Itinerary storage | The whole itinerary as JSON inside a trip version row | Normalized tables | Only if we need to query inside itineraries |
-| Identity | One demo user, no login | Accounts and auth | Public testing beyond a few people (later phase) |
-| Frontend shared code | Types generated from the API into the web app | A small `shared/` package used by web and mobile | Start of mobile (M13) |
-| Monitoring | Structured logs + a run log table with timings and token cost | Tracing tool (Langfuse/OpenTelemetry) | M12 |
+---
 
-Code rules we keep from the design decisions, because they make the system understandable rather than more complex:
+## 3. Keeping it simple
+
+We start with the smallest version of each piece and add a heavier tool only when a real need appears.
+
+| Area | Start with | Add later, only when needed |
+| --- | --- | --- |
+| Background work | A `planning_job` table; the API runs the graph as an asyncio background task; the web app polls the job every second | Redis + Celery or a separate worker process, if measurements in M12 show we need it |
+| Live progress | Polling `GET /jobs/{id}` | Server-Sent Events, if polling feels laggy |
+| Geography | Distances computed in Python (haversine × detour factor) | PostGIS, if spatial queries get slow |
+| Travel times | Estimates by mode from distance, labeled "estimated" | A routing engine (local OSRM/Valhalla or an API) behind an adapter |
+| Itinerary storage | The whole itinerary as JSON inside a trip version row | Normalized tables, only if we need to query inside itineraries |
+| LLM access | Our own small gateway over OpenAI-compatible endpoints | A routing library, only if our gateway stops being enough |
+| Travel profile | Defaults stored on the user | A separate profile model with history |
+
+Code rules that keep the system understandable:
 
 - **LLMs propose structured data; code checks it; only code writes trip state.** Every LLM output is a Pydantic model.
 - **Every number the user sees comes from the solver or the budget calculator,** never from model text.
 - **Trip versions are immutable.** A revision creates a new version with a pointer to its parent.
 - **Real media first.** Every image carries its kind (exact venue, area, generic city, AI decorative), license and author.
-- **Never present demo or estimated data as live or checked.** Every fact shows its source and age.
+- **Never present estimated data as checked.** Every fact shows its source and age; LLM-estimated fields are labeled as estimates.
 
 ---
 
-## 3. Technology choices
+## 4. Infrastructure
+
+Roamate reuses the services that already run on the server for RagBot. It does not share any data with RagBot: it gets its own database, collections and buckets.
+
+| Service | Existing container | Roamate uses |
+| --- | --- | --- |
+| PostgreSQL | `postgres-server` | Database `roamate` with its own user `roamate` |
+| Qdrant | `qdrant-server` (`qdrant/qdrant:v1.16.2`) | Collections prefixed `roamate_` |
+| MinIO | `minio-server` | Buckets prefixed `roamate-` with their own access key |
+| TEI embedding | `tei-embedding` (`text-embeddings-inference:cuda-1.9`, currently `jina-embeddings-v5-text-small-retrieval`) | Dense embeddings for places |
+| TEI reranker | `tei-reranker` (currently `bge-reranker-v2-m3`) | Re-ranking search candidates |
+| vLLM | `gemma4-vllm` (`vllm/vllm-openai`) | Local chat model, first in the fallback list |
+
+All hosts, ports and credentials come from `.env`. For a fresh machine without these services, `infra/docker-compose.yml` starts the same images with the same names, so a new developer can run `docker compose -f infra/docker-compose.yml up -d` and get the same setup. The exact image tags are pinned there in M1.
+
+---
+
+## 5. Technology choices
 
 | Layer | Choice | Why |
 | --- | --- | --- |
-| Backend language | Python 3.12, managed with **uv** | OR-Tools, LangGraph and ML libraries are Python-first |
-| API | **FastAPI** + Pydantic v2 | Typed request/response models and automatic OpenAPI docs |
-| Database | **PostgreSQL 16** with the **pgvector** extension, via **SQLAlchemy 2** + **Alembic** migrations | One database for trips, catalog and (later) embeddings |
-| Solver | **OR-Tools** routing solver (port of `solver_example.py`) | Already prototyped; handles time windows, optional stops, caps |
-| LLM | **Claude** through the Anthropic SDK, behind one `ai/llm.py` adapter; model name in config | Structured outputs; one place to swap or mock the model |
-| Embeddings (M8) | A small local **sentence-transformers** model (e.g. `bge-small-en`, 384 dims) | No API key, free, deterministic |
-| Weather | **Open-Meteo** (no key) | Forecast for near dates, labeled seasonal climate data for far dates |
-| Place data | **OpenStreetMap** (Overpass), **Wikidata**, **Wikimedia Commons** images, then hand review | Storable open data with clear licenses |
-| Web frontend | **React + TypeScript + Vite**, **React Router**, **TanStack Query**, **Tailwind CSS** | Plain single-page app; no server rendering needed; widely understood |
-| Web map | **Leaflet** (react-leaflet) with OpenStreetMap tiles and attribution | Simplest map library that works well |
-| API types in the web app | **openapi-typescript** generates `web/src/api/schema.ts` from FastAPI's OpenAPI | Backend and frontend never disagree about shapes |
-| Tests | **pytest** + **Hypothesis** (backend), **Vitest** + Testing Library (web), **Playwright** (end-to-end in a browser) | One tool per job |
-| Code quality | **ruff** (Python lint/format), **ESLint** + **Prettier** + `tsc` (web), **pre-commit** | Fast, standard |
-| CI | **GitHub Actions**: lint + tests on every pull request | Keeps `main` always working |
-| Local run | **Docker Compose** for Postgres; backend and web run with `uv run` and `npm run dev`. A second Compose profile runs everything | Fast reload while developing, one command for a full run |
-| Mobile (M13+) | **Expo** (React Native) + Expo Router, react-native-maps, same generated API types | Same language and data layer as the web app |
-
-**Launch city:** Lisbon is the default (compact center, many free and paid sights, good open data). Changing the city later means running the same ingestion pipeline on another city.
+| Environment | **Conda** env `roamate` from `environment.yml` (Python 3.12 and Node.js 22); Python packages listed in `backend/pyproject.toml` and installed with pip | One command to create the whole dev environment |
+| API | **FastAPI** + Pydantic v2 | Typed models and automatic OpenAPI docs |
+| Relational data | **PostgreSQL** via **SQLAlchemy 2** + **Alembic** migrations | Users, cities, places, trips, jobs, logs |
+| Vector search | **Qdrant** with dense vectors (TEI) and sparse BM25 vectors, fused with Qdrant's query API | Hybrid semantic and keyword search in one query |
+| Object storage | **MinIO** through the `minio` Python client | Place images, city map tiles, raw ingestion data |
+| Workflow | **LangGraph** with the Postgres checkpointer | Readable graph of steps, pauses for the user, resume after restart |
+| LLM | Our **model gateway** over OpenAI-compatible APIs (local vLLM, OpenRouter, similar routers) using the `openai` Python SDK | One interface, ordered fallback, every call logged |
+| Embeddings and reranking | **TEI** `/embed` and `/rerank` | Already running; local and fast |
+| Solver | **OR-Tools** routing solver (port of `solver_example.py`) | Already prototyped |
+| Auth | Email + password, **argon2** hashes, server-side sessions in Postgres, httpOnly cookie | Simple, secure, no third-party service |
+| Weather | **Open-Meteo**, cached | Free, no key; labeled forecast vs seasonal |
+| Place data | **OpenStreetMap** (Overpass, Nominatim), **Wikidata**, **Wikipedia**, **Wikimedia Commons** | Open data we may store, with clear licenses |
+| Web frontend | **React + TypeScript + Vite**, **React Router**, **TanStack Query**, **Tailwind CSS** | Plain single-page app; everything bundled locally |
+| Web map | **MapLibre GL JS** with a local **PMTiles** map file per city | Works without an internet tile server |
+| Fonts and icons | `@fontsource` packages and `lucide-react`, bundled | No font or icon CDN |
+| API types in the web app | **openapi-typescript** generates `web/src/api/schema.ts` | Frontend always matches backend |
+| Tests | **pytest** + **Hypothesis**, **Vitest** + Testing Library, **Playwright** | One tool per job |
+| Code quality | **ruff**, **ESLint** + **Prettier** + `tsc`, **pre-commit** | Fast, standard |
+| CI | **GitHub Actions** on every push to `main` (and on pull requests later) | Keeps `main` working |
+| Mobile (M13+) | **Expo** (React Native) + Expo Router, same generated API types | Same language and data layer |
 
 ---
 
-## 4. Repository layout
+## 6. Repository layout
 
 ```
 roamate/
-├── backend/                  FastAPI app (Python)
+├── environment.yml           conda env "roamate"
+├── .env.example              every setting with a comment, no secrets
+├── config/
+│   └── models.yaml           ordered LLM providers, embedding and reranker settings
+├── infra/
+│   ├── docker-compose.yml    Postgres, Qdrant, MinIO (and optional TEI/vLLM) for a fresh machine
+│   └── setup/                scripts: create database, create collections, create buckets
+├── backend/
+│   ├── pyproject.toml
 │   ├── app/
 │   │   ├── main.py           creates the FastAPI app, includes routers
 │   │   ├── config.py         settings from environment variables
-│   │   ├── db.py             database engine and session
-│   │   ├── models.py         SQLAlchemy tables
-│   │   ├── schemas/          Pydantic models: brief, place, itinerary, scenario, validation
-│   │   ├── api/              one router file per area: trips, jobs, catalog, intake, lab
-│   │   ├── catalog/          place queries, search, utility scoring
-│   │   ├── planning/         travel.py, solver.py, scenarios.py, budget.py, validator.py, feasibility.py, pipeline.py
-│   │   ├── ai/               llm.py, intake.py, curation.py, story.py, revision.py, (M10) graph.py, prompts/
-│   │   └── providers/        weather.py, routing.py, media.py (each with a live and a demo version)
+│   │   ├── db.py             Postgres engine and session
+│   │   ├── vectors.py        Qdrant client and collection helpers
+│   │   ├── storage.py        MinIO client and object helpers
+│   │   ├── models/           SQLAlchemy tables, one file per area
+│   │   ├── schemas/          Pydantic models: brief, place, itinerary, scenario, budget, validation, delta
+│   │   ├── auth/             passwords, sessions, dependencies (current_user, require_admin)
+│   │   ├── api/              routers: auth, cities, places, trips, jobs, admin, lab
+│   │   ├── llm/              gateway.py, providers.py, structured.py, embeddings.py, reranker.py
+│   │   ├── ingestion/        discover.py, collect.py, merge.py, enrich.py, score.py, review.py, publish.py, tiles.py, pipeline.py
+│   │   ├── catalog/          place queries, hybrid search, utility scoring
+│   │   ├── planning/         travel.py, solver.py, scenarios.py, budget.py, validator.py, feasibility.py, diff.py
+│   │   ├── workflow/         state.py, graph.py, nodes/, prompts/, runner.py
+│   │   └── providers/        weather.py
 │   ├── migrations/           Alembic
-│   ├── scripts/              ingest_city.py, load_catalog.py, seed_demo.py, run_evals.py
-│   └── tests/                unit/, integration/, fixtures/
-├── web/                      React + Vite app
+│   ├── scripts/              ingest_city.py, create_admin.py, run_evals.py
+│   └── tests/
+├── web/
 │   └── src/
-│       ├── api/              generated schema.ts + small fetch client
-│       ├── pages/            Home, NewTrip, TripView, MyTrips, lab/*
-│       ├── components/       shared UI pieces
+│       ├── api/              generated schema.ts + fetch client
+│       ├── auth/             login, register, route guard
+│       ├── pages/            Home, NewTrip, TripView, MyTrips, admin/Cities, admin/Review, lab/*
+│       ├── components/
 │       └── features/         trip-form, story, timeline, map, budget, revision
 ├── mobile/                   Expo app (from M13)
-├── data/cities/lisbon/       places.yaml (reviewed catalog), media.yaml, raw/ (ingestion output)
 ├── evals/                    intake cases, retrieval labels, personas, results/
-├── docs/
-│   ├── plan/                 this plan, the step list
-│   └── adr/                  short architecture decision records
-├── docker-compose.yml
-├── .env.example
-└── .github/workflows/ci.yml
+└── docs/
+    ├── plan/                 this plan and the step list
+    ├── design/               approved design documents (M0)
+    └── adr/                  short decision records
 ```
 
-Each backend folder has one job, and the names say what it is. A new contributor should be able to find "where is the budget calculated?" in one guess: `planning/budget.py`.
-
 ---
 
-## 5. Core data model
+## 7. Data design (first draft, approved in M0)
 
-### Database tables
+These are drafts so the shape of the system is visible. Each one becomes a full design document in M0 (columns, types, indexes, examples) and is approved before any migration is written.
 
-| Table | Key columns | Notes |
+### PostgreSQL tables
+
+| Table | Main columns | Purpose |
 | --- | --- | --- |
-| `city` | id, name, country, timezone, currency, center_lat, center_lon | One row (Lisbon) at first |
-| `place` | id, city_id, name, category, lat, lon, description, interest_tags (JSON: interest → 0..1), visit_minutes, price_per_person, opening_hours (JSON by weekday), curated_score (1–5), accessibility_notes, website_url, booking_url, osm_id, wikidata_id, field_sources (JSON: field → {source, fetched_at, confidence}) | `embedding` and `search_text` columns added in M8 |
-| `media_asset` | id, place_id (nullable), city_id, kind (`exact_venue` / `area` / `generic_city` / `ai_decorative`), url, license, author, source_url, storable, attribution_text | Enforces the real-media-first rule |
-| `trip` | id, owner (demo user), title, created_at, current_version_id, approved_version_id | |
-| `trip_version` | id, trip_id, parent_version_id, number, brief (JSON), scenarios (JSON), selected_scenario, change_summary, story (JSON), created_at, status (`draft` / `approved`) | Immutable after creation, except status |
-| `planning_job` | id, trip_id, kind (`plan` / `revise`), status, events (JSON list), result_version_id, error, timings (JSON), created_at, finished_at | The web app polls this |
-| `run_log` | id, job_id, step, duration_ms, llm_tokens_in/out, cost_estimate, ok, details | Added in M7, used for cost and latency reports |
+| `app_user` | id, email (unique), password_hash, display_name, role (`user` / `admin`), default_preferences (JSON), created_at, last_login_at | Accounts |
+| `user_session` | id, token_hash, user_id, created_at, expires_at, user_agent | Login sessions behind the cookie |
+| `city` | id, slug, name, country, bbox, center_lat, center_lon, timezone, currency, status (`collecting` / `in_review` / `published`), tiles_object_key, published_at | One row per city |
+| `ingest_run` | id, city_id, stage, status, mode (`auto` / `semi`), params (JSON), stats (JSON), error, started_by, started_at, finished_at | Tracks each pipeline run so it can resume |
+| `place_candidate` | id, city_id, ingest_run_id, osm_id, wikidata_id, name, lat, lon, raw (JSON), proposed (JSON), field_sources (JSON), quality_score, status (`pending` / `approved` / `rejected` / `merged`), reviewed_by, reviewed_at | What the pipeline found, before review |
+| `place` | id, city_id, candidate_id, name, category, lat, lon, description, interest_tags (JSON), visit_minutes, price_per_person, opening_hours (JSON by weekday), popularity, accessibility_notes, website_url, booking_url, osm_id, wikidata_id, field_sources (JSON), updated_at | Published places the planner may use |
+| `media_asset` | id, place_id, city_id, kind (`exact_venue` / `area` / `generic_city` / `ai_decorative`), object_key, original_url, license, author, attribution_text, width, height | Images stored in MinIO with their credits |
+| `trip` | id, user_id, city_id, title, created_at, current_version_id, approved_version_id | A user's trip |
+| `trip_version` | id, trip_id, parent_version_id, number, brief (JSON), scenarios (JSON), selected_scenario, story (JSON), change_summary, status (`draft` / `approved`), created_at | Immutable plan versions |
+| `planning_job` | id, trip_id, user_id, kind (`plan` / `revise`), graph_thread_id, status (`running` / `waiting_for_user` / `done` / `failed`), events (JSON), result_version_id, error, timings (JSON), created_at, finished_at | What the web app polls |
+| `llm_call` | id, job_id, node, provider, model, attempt, ok, error_kind, latency_ms, tokens_in, tokens_out, created_at | Which provider answered, failures, cost and speed |
+| LangGraph checkpoint tables | managed by `langgraph-checkpoint-postgres` | Graph state for pause and resume |
 
-### Main Pydantic schemas (`backend/app/schemas/`)
+### Qdrant collections
 
-- **`TripBrief`**: city_id, start_date, end_date, travelers, budget (amount, currency, scope `party`, covers e.g. `[admissions, local_transport]`), known_costs (e.g. hotel already paid), interests (interest → weight), pace (`relaxed` / `normal` / `packed`), transport (walk / metro / taxi allowed), max_walk_minutes_per_day, day_start, day_end, hotel location, must_do place ids, excluded place ids, notes.
-- **`Stop`**: place_id, day, arrive, depart, travel_from_previous (mode, minutes, walk_minutes, cost), why (filled by curation).
-- **`Itinerary`**: days → list of stops + lunch break + return time.
-- **`Scenario`**: name, parameters used, itinerary, budget breakdown, metrics (utility, walking, travel time, spend), skipped places with reasons, validation report.
-- **`BudgetBreakdown`**: lines by category, each marked `quoted` / `estimated` / `unknown` / `excluded`, totals, currency, scope text.
-- **`ValidationReport`**: list of checks (name, passed, details), violation count.
-- **`ProgressEvent`**: step, message, at, partial result (optional).
+| Collection | Point | Vectors | Payload (filterable) |
+| --- | --- | --- | --- |
+| `roamate_places__<model-slug>` | One per published place, id = place id | `dense` from TEI, `sparse` BM25 | city_id, category, interest tags, price_per_person, visit_minutes, open weekdays, popularity |
 
-The TypeScript types for the web (and later mobile) app are generated from these, so the frontend always matches.
+The embedding model's name is part of the collection name. Switching models means creating a new collection, re-embedding (minutes for a few thousand places), and changing one setting.
 
----
+### MinIO buckets
 
-## 6. API (first version)
-
-| Method and path | Purpose | Milestone |
+| Bucket | Object layout | Access |
 | --- | --- | --- |
-| `GET /health` | Liveness check | M0 |
-| `GET /cities`, `GET /cities/{id}/places` | Catalog browse with filters | M2 |
-| `GET /places/{id}` | Place details with media and sources | M2 |
-| `POST /trips` | Create a trip from a `TripBrief`, start a planning job | M5 |
-| `GET /trips`, `GET /trips/{id}` | My trips, one trip with current version | M5 |
-| `GET /trips/{id}/versions`, `GET /trips/{id}/versions/{n}` | Version history | M5 |
-| `GET /jobs/{id}` | Job status, progress events, result | M5 |
-| `POST /intake/parse` | Free text → draft `TripBrief` + clarification questions | M7 |
-| `POST /trips/{id}/revisions` | Request a change, start a revise job | M11 |
-| `POST /trips/{id}/versions/{n}/approve` | Approve a version | M11 |
-| `POST /lab/solve`, `POST /lab/validate`, `POST /lab/search` | Builder tools: run one part synchronously and show its raw output | M4, M8 |
+| `roamate-media` | `cities/{city_slug}/places/{place_id}/{asset_id}.{ext}` plus `…/{asset_id}_thumb.webp` | Served to the app through the backend |
+| `roamate-tiles` | `cities/{city_slug}/basemap.pmtiles` | Served to the map through the backend |
+| `roamate-raw` | `ingest/{run_id}/{stage}/{file}.json` | Private; raw API responses for repeatable runs |
 
-FastAPI serves interactive docs at `/docs`, which is the quickest way to try any endpoint.
+### Domain data structures (Pydantic)
+
+- **`TripBrief`**: city_id, start_date, end_date, travelers, budget (amount, currency, scope, covered categories), known_costs, interests (interest → weight), pace (`relaxed` / `normal` / `packed`), transport (walk, metro, taxi allowed), max_walk_minutes_per_day, day_start, day_end, hotel location, must_do, excluded, notes.
+- **`Stop`**, **`DayPlan`**, **`Itinerary`**: ordered stops with arrive/depart times, travel from the previous stop (mode, minutes, walking, cost), lunch break, return time.
+- **`Scenario`**: name, parameters used, itinerary, budget breakdown, metrics, skipped places with reasons, validation report.
+- **`BudgetBreakdown`**: lines by category marked `quoted` / `estimated` / `unknown` / `excluded`, totals, currency, scope text.
+- **`ValidationReport`**: named checks with pass/fail and details.
+- **`ConstraintDelta`**: the structured form of a change request (e.g. day 2 walking cap 40 min, lock stop X, remove stop Y).
+- **`ProgressEvent`**: step, message, time, optional partial result.
 
 ---
 
-## 7. How a plan is produced
+## 8. Model gateway (LLMs, embeddings, reranker)
 
-The same pipeline is used by the web app and the Lab. In the first version it is one readable function:
+All model calls go through `backend/app/llm/`. Nothing else in the code talks to a model provider directly.
 
-```python
-def plan_trip(brief: TripBrief, job: JobReporter) -> TripVersion:
-    job.event("checking_places")
-    candidates = catalog.find_candidates(brief)            # filters + scoring (M2), hybrid search (M8)
-    problems = feasibility.precheck(brief, candidates)     # e.g. must-do admissions exceed budget
-    if problems:
-        return job.fail_with_choices(problems)
+### Chat models with fallback
 
-    job.event("estimating_routes")
-    travel = planning.travel.matrix(candidates, brief)     # estimates (M3), routing provider (M9)
+`config/models.yaml` lists providers in priority order. Keys stay in `.env`; the YAML only names the variable.
 
-    job.event("comparing_options")
-    scenarios = planning.scenarios.build_all(brief, candidates, travel)  # Budget / Balanced / Comfort
-    for s in scenarios:
-        s.budget = planning.budget.breakdown(brief, s.itinerary)
-        s.validation = planning.validator.check(brief, s.itinerary, candidates)
-
-    job.event("preparing_story")                           # M9
-    story = ai.story.write(brief, scenarios)               # cannot change the schedule
-
-    return trips.save_new_version(brief, scenarios, story)
+```yaml
+chat:
+  - name: local-gemma          # vLLM on our GPU: free and private, tried first
+    base_url: ${VLLM_BASE_URL}
+    model: /app/model
+  - name: openrouter-a
+    base_url: https://openrouter.ai/api/v1
+    model: <free model id>
+    api_key_env: OPENROUTER_API_KEY_1
+  - name: openrouter-b
+    base_url: https://openrouter.ai/api/v1
+    model: <another free model id>
+    api_key_env: OPENROUTER_API_KEY_2
 ```
 
-In M10 this function becomes a LangGraph graph with the same steps as nodes, so we gain checkpoints, a pause for "confirm your brief", and a repair loop, without changing what each step does.
+How a call works:
+
+1. `gateway.structured(prompt, OutputModel)` tries the first provider.
+2. It moves to the next provider on a connection error, a timeout, HTTP 429 or 5xx, or an answer that is still invalid JSON for `OutputModel` after one repair retry.
+3. A provider that returned 429 is skipped for a cool-down period (e.g. 60 seconds) so we don't hammer it.
+4. Every attempt is written to `llm_call` with provider, model, latency, tokens and error type, and the Lab shows which provider answered.
+5. If every provider fails, the job stops with a clear message instead of making something up.
+
+All the providers we plan to use expose the OpenAI-compatible chat API, so one client class covers them; each entry differs only in URL, model and key. Tests use a fake provider that can be told to fail, time out or return bad JSON.
+
+### Embeddings and reranking
+
+- `embeddings.py` calls TEI `/embed` (with the model's query/document prefixes where it needs them) and records the model name with every vector written.
+- `reranker.py` calls TEI `/rerank` to reorder the top search candidates.
+- **Choosing the embedding model (M8):** we label 20–30 trip briefs with the places a good planner would consider, then measure recall@50 for each candidate model served by TEI: `jina-embeddings-v5-text-small-retrieval` (already running), `Qwen3-Embedding` (0.6B and 8B), and EmbeddingGemma. We pick by measured recall, GPU memory and license.
+
+---
+
+## 9. City data pipeline
+
+Adding a city is one command or one button: `python -m scripts.ingest_city "Lisbon, Portugal" --mode semi`, or **Admin → Cities → Add city**. The pipeline runs as stages. Each stage stores its output, can be re-run on its own, and records progress in `ingest_run`.
+
+| Stage | What it does | Output |
+| --- | --- | --- |
+| 1. Discover | Look up the city in Nominatim and Wikidata: boundary, bounding box, center, timezone, currency | `city` row (status `collecting`) |
+| 2. Collect | Query Overpass for tourist categories (museums, monuments, viewpoints, parks, markets, galleries, historic sites, food spots) and Wikidata for notable items inside the boundary | Raw responses in `roamate-raw`, rows in `place_candidate` |
+| 3. Merge | Join OSM and Wikidata records (by Wikidata tag, then name and distance); remove duplicates | One candidate per real place |
+| 4. Enrich | Wikipedia summary, Wikimedia Commons images with license and author (downloaded to `roamate-media`), parsed OSM opening hours, website. The LLM proposes interest tags, typical visit time and price band, each marked `estimated_by_llm` | Filled `proposed` fields with sources |
+| 5. Score | Popularity (Wikipedia language links, page views) and completeness (required fields present) | `quality_score` per candidate |
+| 6. Review | **Semi mode:** the admin review screen lists candidates by score with missing fields highlighted; approve in bulk, edit, reject. **Auto mode:** approve every candidate above a score threshold that has all required fields | Approved candidates |
+| 7. Publish | Copy approved candidates into `place` and `media_asset`, embed and upsert into Qdrant, extract the city's map file (PMTiles) into `roamate-tiles`, set the city to `published` | A city the planner can use |
+
+Rules:
+
+- Respect the public services' usage policies (Nominatim at most one request per second, polite Overpass use) and cache raw responses so re-runs don't call them again.
+- Only store media whose license allows it, and always keep the author and license for display.
+- Required fields for a place to be usable by the planner: coordinates, category, visit time, at least one interest tag, and opening hours or an explicit "hours unknown".
+
+The first city is chosen in M0 (Lisbon is the default). A second city is added in M6 to prove that adding a city needs no code changes.
+
+---
+
+## 10. Planning workflow (LangGraph)
+
+The whole planning flow is one LangGraph graph from its first version.
+
+```
+                ┌──────────────┐
+ free text ───▶ │ intake (LLM) │──missing info──▶ [pause: clarify] ─┐
+                └──────┬───────┘                                    │
+ form ─────────────────┤◀──────────────────────────────────────────┘
+                       ▼
+               [pause: confirm brief]
+                       ▼
+               feasibility precheck ──conflict──▶ explain choices (end)
+                       ▼
+               retrieve candidates (Qdrant hybrid + rerank + utility)
+                       ▼
+               live context (weather)
+                       ▼
+       ┌───────────────┼───────────────┐
+   solve Budget   solve Balanced   solve Comfort      (parallel)
+       └───────────────┼───────────────┘
+                       ▼
+                   validate ──violations, tries < 2──▶ repair ──▶ solve
+                       ▼
+                   budget breakdown
+                       ▼
+                   curate "why this fits you" (LLM)
+                       ▼
+                   write story chapters (LLM, cannot change the schedule)
+                       ▼
+                   save trip version
+```
+
+- **State** (`workflow/state.py`): user and trip ids, raw request, brief, open questions, confirmed flag, candidates, scenarios, validation results, repair attempts, story, events, errors.
+- **Pauses** use LangGraph's `interrupt()`. The job's status becomes `waiting_for_user`, the web app shows the question or the brief summary, and `POST /jobs/{id}/resume` continues the same graph thread.
+- **Checkpoints** in Postgres mean a backend restart doesn't lose a run.
+- **Revision** is a second, smaller graph: parse the change (LLM → `ConstraintDelta`) → re-solve with locked stops → validate → diff → save a new version.
+- **Progress events** are written by each node into `planning_job.events`, which the web app polls.
 
 ### Solver (port of `solver_example.py`)
 
-- Model: prize-collecting Team Orienteering Problem with Time Windows on OR-Tools routing. Each day is a vehicle that starts and ends at the hotel; each place is optional and dropping it costs its utility; must-do places are mandatory.
-- Constraints: opening hours, day start/end, a 60-minute lunch break, hard budget, walking cap per day, stops per day (pace), days balanced.
-- Scenarios: the same model with three parameter sets (weights for utility, travel time, money, walking; transport policy; walking cap; stops per day), plus a diversity rule so each scenario differs by at least two places. If three meaningfully different feasible plans do not exist, the app says so.
-- Determinism: tests use a fixed solution limit instead of a wall-clock limit so results repeat.
+- Prize-collecting Team Orienteering Problem with Time Windows on OR-Tools routing: each day is a vehicle starting and ending at the hotel, each place is optional and dropping it costs its utility, must-dos are mandatory.
+- Constraints: opening hours by weekday, day start/end, a 60-minute lunch break, hard budget, walking cap per day, stops per day (pace), balanced days.
+- Scenarios: three parameter sets plus a diversity rule (each differs by at least two places). If three meaningfully different plans do not exist, the app says so.
+- Tests use a fixed solution limit instead of a time limit so results repeat.
 
-### Validator
+### Validator and infeasibility
 
-Plain code, written separately from the solver, that re-computes the itinerary's timings and costs from the catalog and checks: each stop inside opening hours, the day window, the lunch break, no duplicate places, must-dos present, the hard budget, the walking cap, the pace limit, and time continuity between stops. It is tested with Hypothesis (random itineraries, some deliberately broken) and must catch every planted violation.
-
-### Infeasible requests
-
-`feasibility.precheck()` explains the common conflicts before solving (must-do admissions above budget, a must-do closed on all trip days, must-dos that cannot fit in the available hours). If the solver still finds nothing, the app offers concrete choices: remove a named must-do, allow taxis, raise the budget by a shown amount. Hard limits are never relaxed without the user agreeing.
+The validator is separate code that recomputes timings and costs from the catalog and checks opening hours, day window, lunch, duplicates, must-dos, budget, walking cap, pace and time continuity. Hypothesis tests plant violations and the validator must catch every one. The feasibility precheck explains common conflicts before solving and offers concrete choices; hard limits are never relaxed without the user agreeing.
 
 ---
 
-## 8. The web app
+## 11. The web app
 
-### Traveler screens
+### Screens
 
-| Screen | What it does |
-| --- | --- |
-| Home | Short explanation, "Plan a trip", "My trips", one example trip to open |
-| New trip | Step form: destination and dates → travelers and budget (with "what does this budget cover?") → interests and pace → must-dos and limits → summary to confirm. From M7, a free-text box at the top fills the form |
-| Planning | Real progress steps from the job, partial results where available |
-| Trip view | Scenario switcher (Budget / Balanced / Comfort) and four tabs: Story, Timeline, Map, Budget. Selecting a stop highlights it everywhere. Place drawer with why it fits, duration, price and source, media credit, booking link |
-| Revise | Change box + quick chips ("less walking on day 2", "slower afternoon"), lock icons on stops, a "what changed" diff, approve button |
-| My trips | Saved trips with version history |
+| Screen | Who | What it does |
+| --- | --- | --- |
+| Sign up, sign in | Everyone | Email and password |
+| Home | User | "Plan a trip", "My trips", an example trip |
+| New trip | User | Free-text box that fills the form, then the step form; confirm summary |
+| Clarify / confirm | User | Answers the graph's questions; confirms the brief |
+| Planning | User | Real progress steps from the job |
+| Trip view | User | Scenario switcher and four tabs: Story, Timeline, Map, Budget; linked selection; place drawer with reasons, duration, price and source, media credit, booking link |
+| Revise | User | Change box, quick chips, stop locks, "what changed" diff, approve |
+| My trips | User | Saved trips with version history |
+| Cities | Admin | Add a city, run progress per stage, publish |
+| Review | Admin | Candidate queue: bulk approve, edit, reject |
+| Lab | Admin | Models, Search, Solver, Validator, Intake, Runs, Evals |
 
-Visible trust labels throughout: `Checked`, `Estimated`, `Unknown`, `Demo data`, and image labels (`This venue`, `This area`, `City photo`, `AI illustration`).
+Trust labels throughout: `Checked`, `Estimated`, `Unknown`, and image labels (`This venue`, `This area`, `City photo`, `AI illustration`).
 
-### Lab screens (for builders and testers)
+### Everything served locally
 
-| Lab page | Use |
-| --- | --- |
-| Catalog | Browse and filter places, see missing fields, opening hours, media licenses |
-| Solver | Pick a sample brief, edit weights and caps, run all three scenarios, see the raw itinerary, skipped places and validator report |
-| Validator | Paste or edit an itinerary and see which checks fail |
-| Search (M8) | Type interests, compare tag-only, vector, keyword and hybrid results with scores |
-| Intake (M7) | Type free text, see the extracted `TripBrief` and the questions the AI would ask |
-| Runs | Recent planning jobs with step timings, token use and errors |
-| Evals (M12) | Latest evaluation results per suite |
+- All JavaScript and CSS packages are bundled by Vite into `web/dist`. No CDN links.
+- Fonts come from `@fontsource` packages and icons from `lucide-react`, both bundled.
+- The map uses MapLibre GL JS with the city's PMTiles file, plus the map style, glyphs and sprites stored in the repository, all served by our backend.
+- Place images are served from MinIO through the backend.
+- A build check fails CI if the built app references any external URL.
 
-The Lab is hidden from the traveler navigation and available at `/lab`.
+The backend itself still needs the internet for API-based models, weather and city ingestion. With the local vLLM model and cached weather, a trip can be planned for an already published city with no internet at all.
 
 ---
 
-## 9. Milestones
+## 12. Milestones
 
-Each milestone ends with something runnable, tests, and a short note in `docs/adr/` when it contains a real decision. Sizes are rough guesses for one developer working with AI coding help: **S** ≈ under a week, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks.
+Sizes are rough guesses for one developer working with AI coding help: **S** ≈ under a week, **M** ≈ 1–2 weeks, **L** ≈ 2–3 weeks. They are not commitments.
 
-### Phase 1 — Foundation
+### Phase 1 — Design and approval
 
-**M0. Project foundation (S)**
-Repository layout, backend and web skeletons, Postgres in Docker Compose, lint and tests in CI, `.env.example`, README with run instructions.
-*You can test:* `docker compose up db`, start the backend and web app, see the web page call `/health`.
+**M0. Design and approval (M)**
+Write and approve every design before coding: infrastructure and environment, Postgres schema, Qdrant collections, MinIO layout, domain data structures, auth, model gateway, city pipeline, LangGraph graph, API contract, web screens, launch city and evaluation cases. Each design is a file in `docs/design/`.
+*You can test:* read and approve each design; nothing is coded yet.
 
-### Phase 2 — Planning core, no AI yet
+### Phase 2 — Foundation and accounts
 
-**M1. Trip data model and database (S)**
-Pydantic schemas, SQLAlchemy tables, first Alembic migration, demo user, sample trip briefs as test fixtures.
-*You can test:* run migrations, create and read a trip in tests and in `/docs`.
+**M1. Foundation (S)**
+Conda environment, backend and web skeletons, connections and health checks for Postgres, Qdrant, MinIO, TEI and vLLM, setup scripts for Roamate's database, collections and buckets, local-only frontend assets, lint, tests and CI.
+*You can test:* `conda activate roamate`, start the backend and web app, and see a health page with all six services green.
 
-**M2. Lisbon catalog (M)**
-Ingestion script (OSM + Wikidata + Wikimedia Commons) writes a draft `places.yaml`; hand review of ~150 places (visit time, tags, price, hours, hero image); loader into Postgres with sources and licenses; catalog API.
-*You can test:* Lab → Catalog page lists reviewed Lisbon places with images and credits.
+**M2. Accounts and login (S)**
+User and session tables, register, sign in, sign out, current user, user and admin roles, an admin creation command, sign-in pages and protected routes in the web app.
+*You can test:* create an account, sign in, sign out; an admin sees the Admin menu and a normal user does not.
 
-**M3. Solver: one scenario (M)**
-Travel-time estimates, utility scoring, OR-Tools model from `solver_example.py` on real catalog data, deterministic test mode.
-*You can test:* run the solver on a sample brief from a script and see a 3-day plan.
+**M3. Core data layer (M)**
+Migrations for all remaining tables, Pydantic domain models, Qdrant collection and MinIO bucket helpers, generated TypeScript types, test fixtures.
+*You can test:* run migrations and setup scripts on an empty database and see every table, collection and bucket created; tests create and read each kind of record.
 
-**M4. Three scenarios, budget and validator (M)**
-Scenario parameters and diversity rule, budget breakdown with scope and unknowns, independent validator with property-based tests, infeasibility pre-checks, Lab Solver and Validator pages.
-*You can test:* Lab → Solver: change weights and watch Budget, Balanced, Comfort change; break an itinerary in Lab → Validator and see it caught.
+### Phase 3 — Models and city data
 
-### Phase 3 — First usable web app ("Web Alpha")
+**M4. Model gateway (M)**
+Providers from `config/models.yaml`, ordered fallback with cool-down, structured output with validation and repair, `llm_call` logging, TEI embedding and reranker clients, Lab → Models page.
+*You can test:* Lab → Models: send a test prompt, stop vLLM, and watch the next provider answer, with each attempt listed.
 
-**M5. Planning API and jobs (S)**
-`POST /trips` starts a background job, job progress events, trip versions saved, `GET /trips`.
-*You can test:* create a trip in `/docs`, poll the job, read the saved version.
+**M5. City data pipeline (L)**
+Discover, collect, merge, enrich, score, with resumable stages, raw data in MinIO, images with licenses, LLM-estimated fields marked, and a command-line entry point.
+*You can test:* run the ingest command for the launch city and inspect the candidates, their sources and images.
 
-**M6. Web app: plan, explore, save (L)**
-New-trip form, planning progress screen, trip view with scenario switcher and Timeline, Map, Budget tabs, linked selection, place drawer, My trips, first Playwright end-to-end test.
-*You can test:* the whole flow in a browser with a form and no AI: plan a Lisbon trip, compare scenarios, see the map and costs, reload and find it saved.
+**M6. City review and publishing (L)**
+Admin Cities and Review screens, auto-approve rules, publish to Postgres, Qdrant and MinIO, local map tiles, the launch city reviewed and published, a second city added through the UI only.
+*You can test:* Admin → Cities → Add city, follow the stages, approve places in Review, publish, and see the city's places on its local map.
 
-### Phase 4 — The AI layer
+### Phase 4 — Planning engine
 
-**M7. AI trip intake (M)**
-LLM adapter with structured output and a mock for tests, free text → `TripBrief`, clarification questions, confirmation summary, 30-case intake eval set, run log with tokens and cost, Lab Intake page.
-*You can test:* type "3 relaxed days in Lisbon for two, love food and tiles, max 200 euros, my partner can't walk much" and check the filled form and questions.
+**M7. Solver and scenarios (M)**
+Utility scoring, travel estimates, OR-Tools model on catalog data, all constraints, three scenarios with the diversity rule, deterministic test mode, Lab → Solver page.
+*You can test:* Lab → Solver: pick a city and a sample brief, change weights and caps, and compare Budget, Balanced and Comfort.
 
-**M8. Smarter place search (M)**
-Embeddings in pgvector, Postgres full-text search, hybrid fusion and re-ranking into utility, labeled retrieval set with recall@50, Lab Search page.
-*You can test:* Lab → Search: compare result lists and the measured recall for each method.
+**M8. Validator, budget and search (M)**
+Independent validator with Hypothesis tests, budget breakdown, feasibility precheck, Qdrant hybrid search with reranking feeding utility, retrieval label set, embedding model comparison, Lab → Validator and Lab → Search pages.
+*You can test:* break an itinerary in Lab → Validator and see it caught; compare search methods and embedding models with measured recall in Lab → Search.
 
-**M9. Story, media and live context (M)**
-"Why this fits you" per stop (curation), day chapters grounded in stored descriptions and bound to the validated itinerary, media resolution with labels, Open-Meteo weather (forecast vs seasonal), routing provider adapter, demo-mode fixtures, Story tab.
-*You can test:* open a trip and read day chapters with real images and credits; switch off the network in demo mode and see the "Demo data" label.
+### Phase 5 — AI workflow and web app ("Web Alpha")
 
-**M10. Workflow orchestration with LangGraph (M)**
-Convert `plan_trip()` to a LangGraph graph with Postgres checkpoints, a confirm-brief pause, scenario fan-out, a repair loop driven by validator results (max 2 tries), and clear infeasibility choices.
-*You can test:* stop the backend mid-plan, restart it, and see the job resume; submit an impossible request and get understandable choices.
+**M9. LangGraph planning workflow (L)**
+Graph state and nodes for the form path, intake node with clarify pause, confirm pause, parallel scenarios, validate and repair loop, budget, curation and story nodes, Postgres checkpoints and resume, job runner and job API, weather provider, intake eval set, Lab → Intake and Lab → Runs pages.
+*You can test:* start a plan through `/docs` or Lab → Runs, answer a clarification, restart the backend mid-run and see it resume.
 
-### Phase 5 — Revise, approve, harden ("Web Beta")
+**M10. Web app: plan, explore, save (L)**
+App shell, new-trip form with free text, clarify and confirm screens, progress screen, trip view with Story, Timeline, Map and Budget, linked selection, place drawer, My trips, Playwright end-to-end test, Web Alpha check, tag `v0.1-alpha`.
+*You can test:* the full flow in a browser: sign in, describe a trip, confirm, compare scenarios, read the story, check the map and costs, sign out and back in, reopen it.
 
-**M11. Revision, versions and approval (M)**
-Change request → structured constraint delta (LLM), locked stops, re-solve and validate, "what changed" diff, version history, approve, explicit outbound booking links that never mark anything as booked.
-*You can test:* "less walking on day 2" on a saved trip, see the diff, approve, reload, and open the previous version.
+### Phase 6 — Revise, evaluate, deploy ("Web Beta")
 
-**M12. Evaluation, hardening and test deployment (L)**
-Persona-based evaluation harness, fixed regression suite in CI, metamorphic solver tests, p50/p95 timings for first result and completion, cost limits per run, error states for every provider failure, accessibility pass, Redis/Celery only if measurements require it, deploy to one small server with HTTPS and a shared password, Lab Evals page, invite a few testers.
-*You can test:* the deployed web app from any browser; the Evals page shows violation rate, intake accuracy, recall and latency.
+**M11. Revision and approval (M)**
+Revision graph with `ConstraintDelta`, stop locks, "what changed" diff, version history, approve, outbound booking links that never mark anything as booked, end-to-end test.
+*You can test:* "less walking on day 2" on a saved trip, see the diff, approve, and open the previous version.
 
-### Phase 6 — Mobile app
+**M12. Evaluation, hardening and deployment (L)**
+Persona-based evaluation harness, graders, regression suite in CI, metamorphic solver tests, p50/p95 timings, provider quota and failure tracking, friendly errors, accessibility pass, a worker process or Celery only if measurements require it, deployment on the server next to the existing services, Lab → Evals page, a few testers.
+*You can test:* the deployed web app from another computer; the Evals page shows violation rate, intake accuracy, recall and latency.
+
+### Phase 7 — Mobile app
 
 **M13. Mobile app core (L)**
-Expo app with Expo Router, move shared TypeScript code into `shared/`, trip intake, planning progress, trip view with the four tabs on phone screens, map with react-native-maps, revision and approval, tested in the Android emulator.
-*You can test:* the brief's original demo flow in the Android emulator against the same backend.
+Expo app with Expo Router, shared TypeScript code moved into `shared/`, sign-in, trip intake, progress, trip view tabs, map with the city's local tiles, revision and approval, tested in the Android emulator.
+*You can test:* the brief's demo flow in the Android emulator against the same backend.
 
 **M14. Mobile polish and tester release (M)**
-Offline view of a saved trip, reduced-motion and screen-reader checks, slow-network handling, app icon and splash, internal test builds with EAS for Android (then iOS).
+Offline view of saved trips, accessibility and slow-network checks, app icon and splash, internal test builds with EAS (Android, then iOS).
 *You can test:* install the test build on a real phone.
 
 ### Later (not planned in detail yet)
 
-Accounts and privacy controls, private group planning (invite, vote, lock, approve), share links and "Make this trip mine", more cities, learned ranking from saves and skips, visit-duration prediction, booking integrations after separate validation. The brief keeps these outside the first version, and the earlier decisions recommend groups and share links before any public feed.
+Password reset by email, private group planning (invite, vote, lock, approve), share links and "Make this trip mine", learned ranking from saves and skips, visit-duration prediction, local routing engine, booking integrations after separate validation.
 
 ---
 
-## 10. Testing strategy
+## 13. How we work
+
+### Approval before implementation
+
+1. **M0 designs everything first.** Each design document in `docs/design/` (schemas, data structures, API, graph, pipeline, screens) is posted for review and changed until hooman approves it. Nothing is coded before its design is approved.
+2. **Each step gets a go-ahead.** Before starting a step, Claude posts a short step brief: what will be built, which files change, how it will be tested, and any detail the design left open. Work starts after approval.
+3. **Design changes during coding** go back to step 1 for the affected document; the code follows the approved document.
+
+### Branches
+
+- **Until Web Alpha (end of M10):** commits go directly to `main`, one commit or a few per step, each with tests passing. CI runs on every push.
+- **From Web Alpha on:** `main` stays the working version. Each step is a branch (`m11-2-stop-locks`) and a pull request that is merged after review and green CI.
+
+### Other rules
+
+- Write the core pieces by hand first (solver model, validator, one graph node, the version schema), and use AI help for boilerplate, as the earlier decision record recommends.
+- Secrets live only in `.env` (never committed). `.env.example` lists every setting.
+- Definition of done for a milestone: its "You can test" item works in the running app, tests and CI are green, the README run steps still work, and the step checklist is ticked.
+
+---
+
+## 14. Testing strategy
 
 | Layer | What we test | Tool |
 | --- | --- | --- |
 | Schemas | Valid and invalid briefs, money and date rules | pytest |
-| Solver | Sample briefs give feasible plans; must-dos kept; budget, hours and walking respected; same input gives same output | pytest |
-| Validator | Catches every planted violation in random itineraries | Hypothesis |
-| Solver properties | Every plan passes the validator; raising the budget never lowers utility on exact small cases; removing an unused place leaves the plan unchanged | Hypothesis, metamorphic tests |
-| Catalog | Every place has coordinates, a visit time, a source; every image has a license and author | pytest data checks |
-| AI steps | Run against a mock LLM in normal CI; real-model evals in a separate, manually triggered workflow | pytest + eval scripts |
-| API | Endpoints with a test database | pytest + FastAPI TestClient |
-| Web components | Form validation, linked selection, labels | Vitest + Testing Library |
-| End to end | Plan → explore → revise → approve → reload in a real browser | Playwright |
-| Quality over time | Intake accuracy, recall@50, violation rate, persona pass rate, p50/p95 latency, cost per plan | `evals/` + Lab Evals page |
+| Auth | Passwords hashed, sessions expire, roles enforced on every admin route | pytest |
+| Model gateway | Fallback order, cool-down, bad-JSON repair, logging, all with fake providers | pytest |
+| Ingestion | Each stage on recorded raw responses; merge rules; license rules | pytest with fixtures from `roamate-raw` |
+| Solver | Feasible plans on sample briefs; constraints respected; repeatable output | pytest |
+| Validator | Catches every planted violation | Hypothesis |
+| Solver properties | Every plan passes the validator; metamorphic checks | Hypothesis |
+| Graph | Each node alone; full graph with a fake LLM; pause and resume; restart recovery | pytest |
+| API | Endpoints with a test database and test collections | pytest + FastAPI TestClient |
+| Web | Form validation, linked selection, labels, route guards | Vitest + Testing Library |
+| Local assets | Built app has no external URLs | CI build check |
+| End to end | Sign in → plan → explore → revise → approve → reopen | Playwright |
+| Quality over time | Intake accuracy, recall@50, violation rate, persona pass rate, latency, cost | `evals/` + Lab → Evals |
 
-Rule: CI must pass before merging to `main`, and a failing test is fixed, never skipped.
-
----
-
-## 11. How we work
-
-- **One step = one branch = one small pull request.** Branch names follow the step ID, e.g. `m3-2-travel-estimates`.
-- **Every PR** has a short description, tests for new behavior, and green CI. An AI review runs on each PR and each finding gets an answer.
-- **Write the core pieces by hand first** (solver model, validator, one AI step, the version schema); use AI help for boilerplate, fixtures and UI scaffolding, as the earlier decision record recommends.
-- **ADRs** (`docs/adr/0001-*.md`, half a page each) only for real decisions: web-first stack, polling before Celery, catalog licensing rules, LangGraph adoption, mobile map library.
-- **Secrets** live in `.env` (never committed). The app runs without an API key in demo mode, using recorded fixtures, clearly labeled.
-- **Definition of done for a milestone:** the "You can test" item works in the running app, tests and CI are green, the README run steps still work, and the step checklist is ticked.
+CI uses fake model providers, so it never needs API keys or a GPU. Real-model evaluations run in a separate, manually started workflow or on the server.
 
 ---
 
-## 12. Risks and how the plan handles them
+## 15. Risks and open questions
 
-| Risk | Handling |
+| Item | Handling |
 | --- | --- |
-| Opening hours and prices in open data are incomplete | Hand review for the launch city; missing values shown as `Unknown`, never guessed silently |
-| Solver too slow with many candidates | Cap candidates at 30–60 after search; measure solve time in M4 |
-| LLM output drifts or breaks | Structured outputs, Pydantic validation, retries, mock in CI, eval set tracked over time |
-| Free-tier provider limits | Caching, demo mode, provider adapters that can be swapped |
-| Image licensing | Store only storable media with license and author; display credit everywhere |
-| Scope creep into social features | Social and booking are explicitly in "Later" |
-| Web and mobile drift apart | One backend owns all logic; both apps use the same generated types |
+| Free-tier limits: daily caps, rate limits and models that change or disappear | Ordered fallback, cool-down, local vLLM first, per-provider usage shown in the Lab |
+| Free models vary in JSON quality | Validation and repair retry; fallback on invalid output; eval results recorded per provider |
+| Some free providers may log or train on prompts | Send only what a step needs; no emails, names or passwords in prompts |
+| Shared services with RagBot | Separate database, user, collections and buckets; setup scripts never touch anything without the `roamate` prefix |
+| GPU memory shared by vLLM and TEI models | Measure before adding a large embedding model; prefer smaller models if recall is similar |
+| Open data has gaps in hours and prices | Review screen highlights gaps; unknown values shown as `Unknown`, never guessed silently |
+| Embedding model licenses | Checked in M0 before we commit to a model |
+| MinIO's open-source project has reduced its community releases | We use the pinned image already running; the storage code uses the S3 API, so another S3-compatible store can replace it |
+| Scope creep into social features | Social and booking stay in "Later" |
