@@ -1,6 +1,6 @@
 # Roamate implementation plan
 
-**Version:** 2.1 · 24 October 2026
+**Version:** 2.2 (approved) · 24 October 2026
 **Builds on:** `Roamate_Product_Vision_and_Business_Review_Brief.md` (18 Oct 2026), `pre-build-decisions.md` and `solver-retrieval-evaluation.md` (20 Oct 2026), the runnable `solver_example.py`, and hooman's 11 changes and follow-up of 24 Oct 2026.
 **Companion files:** [implementation-steps.md](implementation-steps.md) (every step title as a checklist) and the visual roadmap.
 
@@ -86,7 +86,7 @@ Roamate reuses the services that already run on the server for RagBot. It does n
 
 All hosts, ports and credentials come from `.env`. For a fresh machine without these services, `infra/docker-compose.yml` starts the same images with the same names, so a new developer can run `docker compose -f infra/docker-compose.yml up -d` and get the same setup. The exact image tags are pinned there in M1.
 
-### Object storage: MinIO now, easy to replace
+### Object storage: MinIO, easy to replace
 
 MinIO stopped publishing community Docker images and binaries in October 2025 and archived its open-source repository in 2026, so it no longer gets updates. The image already running on the server keeps working, and Roamate only needs simple features (put, get, list, delete objects), so we can start with it. Roamate's storage code talks plain S3 through `boto3`, so moving to another S3-compatible server means changing the endpoint and keys in `.env` and copying the buckets.
 
@@ -97,7 +97,7 @@ MinIO stopped publishing community Docker images and binaries in October 2025 an
 | **Garage** | AGPL v3 | Light and simple, designed for several small servers; lacks bucket policies and versioning (we don't need them) |
 | **Ceph RGW** | LGPL | Very complete, but heavy to run; only worth it if you already run Ceph |
 
-Decision in M0.5: keep MinIO for development, or move to SeaweedFS now. Either way the code is the same.
+**Decision (24 Oct 2026): stay with MinIO for now.** We revisit only if it causes problems; SeaweedFS is the first replacement to try.
 
 ---
 
@@ -109,7 +109,7 @@ Decision in M0.5: keep MinIO for development, or move to SeaweedFS now. Either w
 | API | **FastAPI** + Pydantic v2 | Typed models and automatic OpenAPI docs |
 | Relational data | **PostgreSQL** via **SQLAlchemy 2** + **Alembic** migrations | Users, cities, places, trips, jobs, logs |
 | Vector search | **Qdrant** with dense vectors (TEI) and sparse BM25 vectors, fused with Qdrant's query API | Hybrid semantic and keyword search in one query |
-| Object storage | Any S3-compatible server (MinIO today, SeaweedFS as the planned replacement) through **boto3** | Place images, city map tiles, raw ingestion data |
+| Object storage | **MinIO** (decided), accessed through **boto3** so any S3-compatible server can replace it | Place images, city map tiles, raw ingestion data |
 | Workflow | **LangGraph** with the Postgres checkpointer | Readable graph of steps, pauses for the user, resume after restart |
 | LLM | Our **model gateway** over OpenAI-compatible APIs (9Router, OpenRouter, Gemini free tier, local vLLM) using the `openai` Python SDK | One interface, fallback order set in one line, every call logged |
 | Embeddings and reranking | **TEI** `/embed` and `/rerank` | Already running; local and fast |
@@ -256,7 +256,7 @@ providers:
     model: /app/model
 ```
 
-Exact model ids are chosen in M0.8 from what each service offers on that day, since free model lists change often.
+Which services and models we actually use is left open on purpose: each one is a config entry, and we add, remove or reorder them as we test them. Exact model ids are filled in when a provider is first set up, since free model lists change often.
 
 How a call works:
 
@@ -534,5 +534,5 @@ CI uses fake model providers, so it never needs API keys or a GPU. Real-model ev
 | GPU memory shared by vLLM and TEI models | Measure before adding a large embedding model; prefer smaller models if recall is similar |
 | Open data has gaps in hours and prices | Review screen highlights gaps; unknown values shown as `Unknown`, never guessed silently |
 | Embedding model licenses | Jina v5 is non-commercial (CC BY-NC 4.0); EmbeddingGemma-2 and Qwen3-Embedding are Apache 2.0. Fine for development; revisit before any commercial launch |
-| MinIO's open-source project is archived and gets no updates | Use the running image for development; plain S3 code via boto3; SeaweedFS as the planned replacement (§4) |
+| MinIO's open-source project is archived and gets no updates | Decided to stay with the running MinIO image; plain S3 code via boto3 keeps a later switch (SeaweedFS first) to a config change |
 | Scope creep into social features | Social and booking stay in "Later" |

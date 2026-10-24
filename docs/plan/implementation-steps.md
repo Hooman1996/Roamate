@@ -1,20 +1,20 @@
 # Roamate implementation steps
 
-**Version:** 2.1 · 24 October 2026
+**Version:** 2.2 (approved) · 24 October 2026
 
 Every step starts only after its design is approved (M0) and its short step brief gets a go-ahead. Until Web Alpha (end of M10), steps are committed directly to `main`; after that, each step is a branch named after its ID (`m11-2-stop-locks`) and a pull request. Details for each milestone are in [implementation-plan.md](implementation-plan.md).
 
 ## Phase 1 — Design and approval
 
 ### M0. Design and approval
-- [ ] **M0.1** Approve the implementation plan (version 2)
+- [x] **M0.1** Approve the implementation plan (approved 24 Oct 2026)
 - [ ] **M0.2** Design: infrastructure, shared services, conda environment and `.env` settings
 - [ ] **M0.3** Design: PostgreSQL schema (every table, column, index, with examples)
 - [ ] **M0.4** Design: Qdrant collections, vectors and payload indexes
-- [ ] **M0.5** Design: object storage (keep MinIO or move to SeaweedFS), buckets, object layout and access rules
+- [ ] **M0.5** Design: MinIO buckets, object layout and access rules
 - [ ] **M0.6** Design: domain data structures (TripBrief, Itinerary, Scenario, BudgetBreakdown, ValidationReport, ConstraintDelta)
 - [ ] **M0.7** Design: accounts, sessions, roles and sign-in flows
-- [ ] **M0.8** Design: model gateway: providers (9Router, OpenRouter, Gemini, local vLLM), chain order and fallback rules
+- [ ] **M0.8** Design: model gateway: provider config format, chain order and fallback rules
 - [ ] **M0.9** Design: city ingestion stages, review rules and auto-approve thresholds
 - [ ] **M0.10** Design: LangGraph state, nodes, edges, pauses and revision graph
 - [ ] **M0.11** Design: API contract (endpoints, requests, responses, errors)
