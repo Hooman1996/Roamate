@@ -1,6 +1,6 @@
 # Roamate implementation steps
 
-**Version:** 2 · 24 October 2026
+**Version:** 2.1 · 24 October 2026
 
 Every step starts only after its design is approved (M0) and its short step brief gets a go-ahead. Until Web Alpha (end of M10), steps are committed directly to `main`; after that, each step is a branch named after its ID (`m11-2-stop-locks`) and a pull request. Details for each milestone are in [implementation-plan.md](implementation-plan.md).
 
@@ -11,10 +11,10 @@ Every step starts only after its design is approved (M0) and its short step brie
 - [ ] **M0.2** Design: infrastructure, shared services, conda environment and `.env` settings
 - [ ] **M0.3** Design: PostgreSQL schema (every table, column, index, with examples)
 - [ ] **M0.4** Design: Qdrant collections, vectors and payload indexes
-- [ ] **M0.5** Design: MinIO buckets, object layout and access rules
+- [ ] **M0.5** Design: object storage (keep MinIO or move to SeaweedFS), buckets, object layout and access rules
 - [ ] **M0.6** Design: domain data structures (TripBrief, Itinerary, Scenario, BudgetBreakdown, ValidationReport, ConstraintDelta)
 - [ ] **M0.7** Design: accounts, sessions, roles and sign-in flows
-- [ ] **M0.8** Design: model gateway config, provider list and fallback rules
+- [ ] **M0.8** Design: model gateway: providers (9Router, OpenRouter, Gemini, local vLLM), chain order and fallback rules
 - [ ] **M0.9** Design: city ingestion stages, review rules and auto-approve thresholds
 - [ ] **M0.10** Design: LangGraph state, nodes, edges, pauses and revision graph
 - [ ] **M0.11** Design: API contract (endpoints, requests, responses, errors)
@@ -28,8 +28,8 @@ Every step starts only after its design is approved (M0) and its short step brie
 - [ ] **M1.2** Add `environment.yml` for the conda env `roamate` (Python 3.12, Node.js 22)
 - [ ] **M1.3** Set up the FastAPI backend skeleton with settings from `.env` and `.env.example`
 - [ ] **M1.4** Add `infra/docker-compose.yml` with the same pinned images as the RagBot server
-- [ ] **M1.5** Add setup scripts for the `roamate` database and user, Qdrant collections and MinIO buckets
-- [ ] **M1.6** Add connection clients and a health endpoint for Postgres, Qdrant, MinIO, TEI and vLLM
+- [ ] **M1.5** Add setup scripts for the `roamate` database and user, Qdrant collections and object storage buckets
+- [ ] **M1.6** Add connection clients and a health endpoint for Postgres, Qdrant, object storage, TEI, vLLM and 9Router
 - [ ] **M1.7** Set up the React + Vite + TypeScript web app with Tailwind, React Router and bundled fonts and icons
 - [ ] **M1.8** Build the health page in the web app
 - [ ] **M1.9** Add a build check that fails on any external URL in the built web app
@@ -48,25 +48,26 @@ Every step starts only after its design is approved (M0) and its short step brie
 - [ ] **M3.1** Write the Pydantic domain models from the approved design
 - [ ] **M3.2** Create migrations for city, ingestion, place, media, trip, version, job and LLM call tables
 - [ ] **M3.3** Add the Qdrant collection helpers (create, upsert, hybrid query)
-- [ ] **M3.4** Add the MinIO storage helpers (upload, read, serve through the backend)
+- [ ] **M3.4** Add the S3 storage helpers with boto3 (upload, read, serve through the backend)
 - [ ] **M3.5** Generate TypeScript types for the web app from the OpenAPI schema
 - [ ] **M3.6** Add test fixtures: sample places, briefs (normal, tight budget, low walking, impossible)
 
 ## Phase 3 — Models and city data
 
 ### M4. Model gateway
-- [ ] **M4.1** Load providers from `config/models.yaml` and keys from `.env`
-- [ ] **M4.2** Write the OpenAI-compatible client and ordered fallback with cool-down
-- [ ] **M4.3** Add structured output with Pydantic validation and one repair retry
-- [ ] **M4.4** Log every attempt to the `llm_call` table
-- [ ] **M4.5** Add the TEI embedding and reranker clients
-- [ ] **M4.6** Add gateway tests with fake providers (fail, timeout, 429, bad JSON)
-- [ ] **M4.7** Build the Lab → Models page
+- [ ] **M4.1** Load providers and the chain order from `config/models.yaml` (overridable by `LLM_CHAIN`) and keys from `.env`
+- [ ] **M4.2** Write the OpenAI-compatible client and chain fallback with cool-down
+- [ ] **M4.3** Add OpenRouter model lists (free models only) and set up 9Router on the server
+- [ ] **M4.4** Add structured output with Pydantic validation and one repair retry
+- [ ] **M4.5** Log every attempt to the `llm_call` table
+- [ ] **M4.6** Add the TEI embedding and reranker clients
+- [ ] **M4.7** Add gateway tests with fake providers (fail, timeout, 429, bad JSON)
+- [ ] **M4.8** Build the Lab → Models page
 
 ### M5. City data pipeline
 - [ ] **M5.1** Write the pipeline runner with resumable stages and `ingest_run` tracking
 - [ ] **M5.2** Write the Discover stage (Nominatim and Wikidata)
-- [ ] **M5.3** Write the Collect stage (Overpass and Wikidata) with raw data saved to MinIO
+- [ ] **M5.3** Write the Collect stage (Overpass and Wikidata) with raw data saved to object storage
 - [ ] **M5.4** Write the Merge stage (OSM–Wikidata matching and duplicates)
 - [ ] **M5.5** Write the Enrich stage: Wikipedia summaries, Commons images with licenses, opening hours
 - [ ] **M5.6** Add LLM-estimated tags, visit times and price bands, marked as estimates

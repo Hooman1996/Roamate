@@ -1,7 +1,7 @@
 # Roamate implementation plan
 
-**Version:** 2 · 24 October 2026
-**Builds on:** `Roamate_Product_Vision_and_Business_Review_Brief.md` (18 Oct 2026), `pre-build-decisions.md` and `solver-retrieval-evaluation.md` (20 Oct 2026), the runnable `solver_example.py`, and hooman's 11 changes of 24 Oct 2026.
+**Version:** 2.1 · 24 October 2026
+**Builds on:** `Roamate_Product_Vision_and_Business_Review_Brief.md` (18 Oct 2026), `pre-build-decisions.md` and `solver-retrieval-evaluation.md` (20 Oct 2026), the runnable `solver_example.py`, and hooman's 11 changes and follow-up of 24 Oct 2026.
 **Companion files:** [implementation-steps.md](implementation-steps.md) (every step title as a checklist) and the visual roadmap.
 
 ---
@@ -38,11 +38,11 @@ The brief's demo scenario, run in a browser: a user signs in, enters a 3-day tri
 | 3 | Ready database images, as in RagBot | §4. Roamate connects to the services already running for RagBot, with its own database, collections and buckets |
 | 4 | Every step approved before implementation | §13. M0 is a full design phase; nothing is coded until its design is approved, and each step gets a go-ahead |
 | 5 | Users and login from the start | M2. Email and password accounts with user and admin roles |
-| 6 | Free-tier API keys or local vLLM, with fallback | §8. One model gateway with an ordered list of providers that falls back to the next one on failure; embeddings via TEI |
+| 6 | Free-tier API keys or local vLLM, with fallback | §8. One model gateway; free-tier API models first, local vLLM last, order set in one line; embeddings via TEI |
 | 7 | A stage to collect cities and places, with easy semi-automatic ingestion | §9, M5 and M6. A staged city pipeline with a review queue and an auto-approve mode |
 | 8 | Conda environment named `roamate` | §5. `environment.yml` replaces uv |
 | 9 | Embedding model to be chosen | §8. A measured comparison of candidate models in M8 |
-| 10 | All frontend files local, no internet needed for them | §11. Bundled packages and fonts, local map tiles, images served from MinIO, and a build check |
+| 10 | All frontend files local, no internet needed for them | §11. Bundled packages and fonts, local map tiles, images served from our own object storage, and a build check |
 | 11 | Work on `main` for the early phases | §13. Direct commits to `main` until Web Alpha, then branches and pull requests |
 
 ---
@@ -79,12 +79,25 @@ Roamate reuses the services that already run on the server for RagBot. It does n
 | --- | --- | --- |
 | PostgreSQL | `postgres-server` | Database `roamate` with its own user `roamate` |
 | Qdrant | `qdrant-server` (`qdrant/qdrant:v1.16.2`) | Collections prefixed `roamate_` |
-| MinIO | `minio-server` | Buckets prefixed `roamate-` with their own access key |
+| Object storage | `minio-server` | Buckets prefixed `roamate-` with their own access key (see below) |
 | TEI embedding | `tei-embedding` (`text-embeddings-inference:cuda-1.9`, currently `jina-embeddings-v5-text-small-retrieval`) | Dense embeddings for places |
 | TEI reranker | `tei-reranker` (currently `bge-reranker-v2-m3`) | Re-ranking search candidates |
 | vLLM | `gemma4-vllm` (`vllm/vllm-openai`) | Local chat model, first in the fallback list |
 
 All hosts, ports and credentials come from `.env`. For a fresh machine without these services, `infra/docker-compose.yml` starts the same images with the same names, so a new developer can run `docker compose -f infra/docker-compose.yml up -d` and get the same setup. The exact image tags are pinned there in M1.
+
+### Object storage: MinIO now, easy to replace
+
+MinIO stopped publishing community Docker images and binaries in October 2025 and archived its open-source repository in 2026, so it no longer gets updates. The image already running on the server keeps working, and Roamate only needs simple features (put, get, list, delete objects), so we can start with it. Roamate's storage code talks plain S3 through `boto3`, so moving to another S3-compatible server means changing the endpoint and keys in `.env` and copying the buckets.
+
+| Option | License | Fit for Roamate |
+| --- | --- | --- |
+| **SeaweedFS** | Apache 2.0 | Mature, actively released, runs on one machine (`weed server -s3`), good with many small files such as images and thumbnails. **Recommended if we switch.** |
+| **RustFS** | Apache 2.0 | Closest to MinIO in feel and setup, single-node friendly, but young; fine for development, watch it before production |
+| **Garage** | AGPL v3 | Light and simple, designed for several small servers; lacks bucket policies and versioning (we don't need them) |
+| **Ceph RGW** | LGPL | Very complete, but heavy to run; only worth it if you already run Ceph |
+
+Decision in M0.5: keep MinIO for development, or move to SeaweedFS now. Either way the code is the same.
 
 ---
 
@@ -96,9 +109,9 @@ All hosts, ports and credentials come from `.env`. For a fresh machine without t
 | API | **FastAPI** + Pydantic v2 | Typed models and automatic OpenAPI docs |
 | Relational data | **PostgreSQL** via **SQLAlchemy 2** + **Alembic** migrations | Users, cities, places, trips, jobs, logs |
 | Vector search | **Qdrant** with dense vectors (TEI) and sparse BM25 vectors, fused with Qdrant's query API | Hybrid semantic and keyword search in one query |
-| Object storage | **MinIO** through the `minio` Python client | Place images, city map tiles, raw ingestion data |
+| Object storage | Any S3-compatible server (MinIO today, SeaweedFS as the planned replacement) through **boto3** | Place images, city map tiles, raw ingestion data |
 | Workflow | **LangGraph** with the Postgres checkpointer | Readable graph of steps, pauses for the user, resume after restart |
-| LLM | Our **model gateway** over OpenAI-compatible APIs (local vLLM, OpenRouter, similar routers) using the `openai` Python SDK | One interface, ordered fallback, every call logged |
+| LLM | Our **model gateway** over OpenAI-compatible APIs (9Router, OpenRouter, Gemini free tier, local vLLM) using the `openai` Python SDK | One interface, fallback order set in one line, every call logged |
 | Embeddings and reranking | **TEI** `/embed` and `/rerank` | Already running; local and fast |
 | Solver | **OR-Tools** routing solver (port of `solver_example.py`) | Already prototyped |
 | Auth | Email + password, **argon2** hashes, server-side sessions in Postgres, httpOnly cookie | Simple, secure, no third-party service |
@@ -122,9 +135,9 @@ roamate/
 ├── environment.yml           conda env "roamate"
 ├── .env.example              every setting with a comment, no secrets
 ├── config/
-│   └── models.yaml           ordered LLM providers, embedding and reranker settings
+│   └── models.yaml           LLM providers and their order, embedding and reranker settings
 ├── infra/
-│   ├── docker-compose.yml    Postgres, Qdrant, MinIO (and optional TEI/vLLM) for a fresh machine
+│   ├── docker-compose.yml    Postgres, Qdrant, object storage (and optional TEI/vLLM) for a fresh machine
 │   └── setup/                scripts: create database, create collections, create buckets
 ├── backend/
 │   ├── pyproject.toml
@@ -133,7 +146,7 @@ roamate/
 │   │   ├── config.py         settings from environment variables
 │   │   ├── db.py             Postgres engine and session
 │   │   ├── vectors.py        Qdrant client and collection helpers
-│   │   ├── storage.py        MinIO client and object helpers
+│   │   ├── storage.py        S3 client (boto3) and object helpers
 │   │   ├── models/           SQLAlchemy tables, one file per area
 │   │   ├── schemas/          Pydantic models: brief, place, itinerary, scenario, budget, validation, delta
 │   │   ├── auth/             passwords, sessions, dependencies (current_user, require_admin)
@@ -178,7 +191,7 @@ These are drafts so the shape of the system is visible. Each one becomes a full 
 | `ingest_run` | id, city_id, stage, status, mode (`auto` / `semi`), params (JSON), stats (JSON), error, started_by, started_at, finished_at | Tracks each pipeline run so it can resume |
 | `place_candidate` | id, city_id, ingest_run_id, osm_id, wikidata_id, name, lat, lon, raw (JSON), proposed (JSON), field_sources (JSON), quality_score, status (`pending` / `approved` / `rejected` / `merged`), reviewed_by, reviewed_at | What the pipeline found, before review |
 | `place` | id, city_id, candidate_id, name, category, lat, lon, description, interest_tags (JSON), visit_minutes, price_per_person, opening_hours (JSON by weekday), popularity, accessibility_notes, website_url, booking_url, osm_id, wikidata_id, field_sources (JSON), updated_at | Published places the planner may use |
-| `media_asset` | id, place_id, city_id, kind (`exact_venue` / `area` / `generic_city` / `ai_decorative`), object_key, original_url, license, author, attribution_text, width, height | Images stored in MinIO with their credits |
+| `media_asset` | id, place_id, city_id, kind (`exact_venue` / `area` / `generic_city` / `ai_decorative`), object_key, original_url, license, author, attribution_text, width, height | Images in object storage with their credits |
 | `trip` | id, user_id, city_id, title, created_at, current_version_id, approved_version_id | A user's trip |
 | `trip_version` | id, trip_id, parent_version_id, number, brief (JSON), scenarios (JSON), selected_scenario, story (JSON), change_summary, status (`draft` / `approved`), created_at | Immutable plan versions |
 | `planning_job` | id, trip_id, user_id, kind (`plan` / `revise`), graph_thread_id, status (`running` / `waiting_for_user` / `done` / `failed`), events (JSON), result_version_id, error, timings (JSON), created_at, finished_at | What the web app polls |
@@ -193,7 +206,7 @@ These are drafts so the shape of the system is visible. Each one becomes a full 
 
 The embedding model's name is part of the collection name. Switching models means creating a new collection, re-embedding (minutes for a few thousand places), and changing one setting.
 
-### MinIO buckets
+### Object storage buckets
 
 | Bucket | Object layout | Access |
 | --- | --- | --- |
@@ -219,38 +232,59 @@ All model calls go through `backend/app/llm/`. Nothing else in the code talks to
 
 ### Chat models with fallback
 
-`config/models.yaml` lists providers in priority order. Keys stay in `.env`; the YAML only names the variable.
+`config/models.yaml` defines each provider once, and a single line chooses the order. Free-tier API models, which are usually stronger than our local model, come first; the local vLLM model is the last safety net. Keys stay in `.env`; the YAML only names the variable.
 
 ```yaml
-chat:
-  - name: local-gemma          # vLLM on our GPU: free and private, tried first
+# Order to try. Change this line (or set LLM_CHAIN in .env) to reorder; nothing else changes.
+chain: [nineroute, openrouter-free, gemini-free, local-gemma]
+
+providers:
+  nineroute:                    # 9Router running on our server; does its own fallback across its free providers
+    base_url: ${NINEROUTER_BASE_URL}        # e.g. http://localhost:20128/v1
+    model: ${NINEROUTER_MODEL}              # a 9Router combo name
+    api_key_env: NINEROUTER_API_KEY
+  openrouter-free:              # OpenRouter; tries the listed free models in order on its side
+    base_url: https://openrouter.ai/api/v1
+    models: [<nemotron :free id>, <deepseek :free id>]
+    api_key_env: OPENROUTER_API_KEY
+  gemini-free:                  # Gemini free tier through its OpenAI-compatible endpoint
+    base_url: https://generativelanguage.googleapis.com/v1beta/openai/
+    model: <gemini flash model id>
+    api_key_env: GEMINI_API_KEY
+  local-gemma:                  # vLLM on our GPU: always available, private, no quota
     base_url: ${VLLM_BASE_URL}
     model: /app/model
-  - name: openrouter-a
-    base_url: https://openrouter.ai/api/v1
-    model: <free model id>
-    api_key_env: OPENROUTER_API_KEY_1
-  - name: openrouter-b
-    base_url: https://openrouter.ai/api/v1
-    model: <another free model id>
-    api_key_env: OPENROUTER_API_KEY_2
 ```
+
+Exact model ids are chosen in M0.8 from what each service offers on that day, since free model lists change often.
 
 How a call works:
 
-1. `gateway.structured(prompt, OutputModel)` tries the first provider.
+1. `gateway.structured(prompt, OutputModel)` tries the first provider in `chain`.
 2. It moves to the next provider on a connection error, a timeout, HTTP 429 or 5xx, or an answer that is still invalid JSON for `OutputModel` after one repair retry.
 3. A provider that returned 429 is skipped for a cool-down period (e.g. 60 seconds) so we don't hammer it.
-4. Every attempt is written to `llm_call` with provider, model, latency, tokens and error type, and the Lab shows which provider answered.
+4. Every attempt is written to `llm_call` with provider, the model that actually answered, latency, tokens and error type, and the Lab shows it.
 5. If every provider fails, the job stops with a clear message instead of making something up.
 
-All the providers we plan to use expose the OpenAI-compatible chat API, so one client class covers them; each entry differs only in URL, model and key. Tests use a fake provider that can be told to fail, time out or return bad JSON.
+**Two levels of fallback.** OpenRouter (its `models` list) and 9Router (its combos) already fall back between models inside their own service. Our gateway adds the outer level: across services, to the local model, and on answers that are not valid for our schema, which a router cannot judge. One rule: OpenRouter's list contains only `:free` model ids, because if it falls back to a paid model it bills that model.
+
+All these services expose the OpenAI-compatible chat API, so one client class covers them; each entry differs only in URL, model(s) and key. Tests use a fake provider that can be told to fail, time out or return bad JSON.
+
+**9Router** is open-source (MIT) software that we run ourselves (`npm install -g 9router`, local server on port 20128). It is deployed as one more service next to vLLM and TEI.
 
 ### Embeddings and reranking
 
-- `embeddings.py` calls TEI `/embed` (with the model's query/document prefixes where it needs them) and records the model name with every vector written.
-- `reranker.py` calls TEI `/rerank` to reorder the top search candidates.
-- **Choosing the embedding model (M8):** we label 20–30 trip briefs with the places a good planner would consider, then measure recall@50 for each candidate model served by TEI: `jina-embeddings-v5-text-small-retrieval` (already running), `Qwen3-Embedding` (0.6B and 8B), and EmbeddingGemma. We pick by measured recall, GPU memory and license.
+- `embeddings.py` calls TEI `/embed` with the model's query and document prefixes, and records the model name with every vector written.
+- `reranker.py` calls TEI `/rerank` (currently `bge-reranker-v2-m3`) to reorder the top search candidates.
+- **Choosing the embedding model (M8):** we label 20–30 trip briefs with the places a good planner would consider, then measure recall@50 for each candidate on our own city data, and pick by recall, GPU memory and license.
+
+| Candidate | Size | Vector size | Context | License | Notes |
+| --- | --- | --- | --- | --- | --- |
+| `jinaai/jina-embeddings-v5-text-small-retrieval` | 677M | 1024 (can be cut to 512, 256, …) | 32k | CC BY-NC 4.0: non-commercial; commercial use needs a license from Jina | Already running in TEI for RagBot; prefixes `Query: ` / `Document: ` |
+| `google/embeddinggemma-2` | 270M text backbone (740M with image and audio encoders) | 768 (can be cut to 512, 256, 128) | 8k | Apache 2.0 | Prefixes `task: search result \| query: …` / `title: none \| text: …`; must run in bfloat16, not float16; TEI support to be confirmed in M0 |
+| `Qwen/Qwen3-Embedding` (0.6B, 4B, 8B) | 0.6B to 8B | up to 4096 | 32k | Apache 2.0 | 8B needs about 16 GB of GPU memory next to vLLM; test 0.6B first |
+
+Fine for development with any of them. If Roamate becomes a commercial product, the Jina model needs a paid license or a switch to one of the Apache 2.0 models.
 
 ---
 
@@ -355,7 +389,7 @@ Trust labels throughout: `Checked`, `Estimated`, `Unknown`, and image labels (`T
 - All JavaScript and CSS packages are bundled by Vite into `web/dist`. No CDN links.
 - Fonts come from `@fontsource` packages and icons from `lucide-react`, both bundled.
 - The map uses MapLibre GL JS with the city's PMTiles file, plus the map style, glyphs and sprites stored in the repository, all served by our backend.
-- Place images are served from MinIO through the backend.
+- Place images are served from object storage through the backend.
 - A build check fails CI if the built app references any external URL.
 
 The backend itself still needs the internet for API-based models, weather and city ingestion. With the local vLLM model and cached weather, a trip can be planned for an already published city with no internet at all.
@@ -369,21 +403,21 @@ Sizes are rough guesses for one developer working with AI coding help: **S** ≈
 ### Phase 1 — Design and approval
 
 **M0. Design and approval (M)**
-Write and approve every design before coding: infrastructure and environment, Postgres schema, Qdrant collections, MinIO layout, domain data structures, auth, model gateway, city pipeline, LangGraph graph, API contract, web screens, launch city and evaluation cases. Each design is a file in `docs/design/`.
+Write and approve every design before coding: infrastructure and environment, Postgres schema, Qdrant collections, object storage layout, domain data structures, auth, model gateway, city pipeline, LangGraph graph, API contract, web screens, launch city and evaluation cases. Each design is a file in `docs/design/`.
 *You can test:* read and approve each design; nothing is coded yet.
 
 ### Phase 2 — Foundation and accounts
 
 **M1. Foundation (S)**
-Conda environment, backend and web skeletons, connections and health checks for Postgres, Qdrant, MinIO, TEI and vLLM, setup scripts for Roamate's database, collections and buckets, local-only frontend assets, lint, tests and CI.
-*You can test:* `conda activate roamate`, start the backend and web app, and see a health page with all six services green.
+Conda environment, backend and web skeletons, connections and health checks for Postgres, Qdrant, object storage, TEI, vLLM and 9Router, setup scripts for Roamate's database, collections and buckets, local-only frontend assets, lint, tests and CI.
+*You can test:* `conda activate roamate`, start the backend and web app, and see a health page with every service green.
 
 **M2. Accounts and login (S)**
 User and session tables, register, sign in, sign out, current user, user and admin roles, an admin creation command, sign-in pages and protected routes in the web app.
 *You can test:* create an account, sign in, sign out; an admin sees the Admin menu and a normal user does not.
 
 **M3. Core data layer (M)**
-Migrations for all remaining tables, Pydantic domain models, Qdrant collection and MinIO bucket helpers, generated TypeScript types, test fixtures.
+Migrations for all remaining tables, Pydantic domain models, Qdrant collection and S3 bucket helpers, generated TypeScript types, test fixtures.
 *You can test:* run migrations and setup scripts on an empty database and see every table, collection and bucket created; tests create and read each kind of record.
 
 ### Phase 3 — Models and city data
@@ -393,11 +427,11 @@ Providers from `config/models.yaml`, ordered fallback with cool-down, structured
 *You can test:* Lab → Models: send a test prompt, stop vLLM, and watch the next provider answer, with each attempt listed.
 
 **M5. City data pipeline (L)**
-Discover, collect, merge, enrich, score, with resumable stages, raw data in MinIO, images with licenses, LLM-estimated fields marked, and a command-line entry point.
+Discover, collect, merge, enrich, score, with resumable stages, raw data in object storage, images with licenses, LLM-estimated fields marked, and a command-line entry point.
 *You can test:* run the ingest command for the launch city and inspect the candidates, their sources and images.
 
 **M6. City review and publishing (L)**
-Admin Cities and Review screens, auto-approve rules, publish to Postgres, Qdrant and MinIO, local map tiles, the launch city reviewed and published, a second city added through the UI only.
+Admin Cities and Review screens, auto-approve rules, publish to Postgres, Qdrant and object storage, local map tiles, the launch city reviewed and published, a second city added through the UI only.
 *You can test:* Admin → Cities → Add city, follow the stages, approve places in Review, publish, and see the city's places on its local map.
 
 ### Phase 4 — Planning engine
@@ -493,12 +527,12 @@ CI uses fake model providers, so it never needs API keys or a GPU. Real-model ev
 
 | Item | Handling |
 | --- | --- |
-| Free-tier limits: daily caps, rate limits and models that change or disappear | Ordered fallback, cool-down, local vLLM first, per-provider usage shown in the Lab |
+| Free-tier limits: daily caps, rate limits and models that change or disappear | Configurable fallback chain, cool-down, local vLLM as the last safety net, per-provider usage shown in the Lab |
 | Free models vary in JSON quality | Validation and repair retry; fallback on invalid output; eval results recorded per provider |
-| Some free providers may log or train on prompts | Send only what a step needs; no emails, names or passwords in prompts |
+| Some free tiers may log prompts or use them for training | Send only what a step needs; no emails, names or passwords in prompts |
 | Shared services with RagBot | Separate database, user, collections and buckets; setup scripts never touch anything without the `roamate` prefix |
 | GPU memory shared by vLLM and TEI models | Measure before adding a large embedding model; prefer smaller models if recall is similar |
 | Open data has gaps in hours and prices | Review screen highlights gaps; unknown values shown as `Unknown`, never guessed silently |
-| Embedding model licenses | Checked in M0 before we commit to a model |
-| MinIO's open-source project has reduced its community releases | We use the pinned image already running; the storage code uses the S3 API, so another S3-compatible store can replace it |
+| Embedding model licenses | Jina v5 is non-commercial (CC BY-NC 4.0); EmbeddingGemma-2 and Qwen3-Embedding are Apache 2.0. Fine for development; revisit before any commercial launch |
+| MinIO's open-source project is archived and gets no updates | Use the running image for development; plain S3 code via boto3; SeaweedFS as the planned replacement (§4) |
 | Scope creep into social features | Social and booking stay in "Later" |
