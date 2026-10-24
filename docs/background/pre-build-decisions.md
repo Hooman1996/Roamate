@@ -1,5 +1,7 @@
 # Roamate: four decisions before the build
 
+**Status:** historical background, not binding. Where it differs from the [implementation plan](../plan/implementation-plan.md), the plan wins (plan §0).
+
 **Date:** 20 October 2026
 **Basis:** *Roamate Product Vision and Business Review Brief* (18 Oct 2026), which fixes the stack (React Native/Expo, FastAPI, LangGraph, PostgreSQL/pgvector, Redis/Celery, OR-Tools), the real-media-first rule, the solver-plus-validator design and a prototype scoped to one local demo user. Market facts below come from dated public sources listed at the end; no competitor was tested hands-on for this note.
 

@@ -18,6 +18,22 @@ Taxi fares come from a metered tariff: flag fall + per km + per minute.
 
 Run:  python3 solver_example.py      (needs: pip install ortools)
 All data is fictional.
+
+Status: historical illustration, not binding (plan v3.0, §0). Known issues
+found in review 1, fixed in the real solver (plan §10), not here:
+  - a negative remaining budget after the hotel nights aborts OR-Tools (F26);
+    the real solver checks every input first and runs in a child process;
+  - lunch is declared but can fall outside a short day's route (F24);
+  - one opening window per place for all days (F24); the real solver uses
+    one copy per day;
+  - SetGlobalSpanCostCoefficient measures the latest end minus the earliest
+    start across days, not the longest minus the shortest day (F29);
+  - scenarios are forced to differ by two places, sequentially (F28); the
+    real solver solves options independently and removes duplicates;
+  - fares are rounded to whole euros and nights equal sightseeing days (F25);
+    the real solver uses minor currency units and check-in/check-out dates;
+  - every missing solution is called "no feasible plan" (F27), even when the
+    time limit simply ran out.
 """
 
 import math

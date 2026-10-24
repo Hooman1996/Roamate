@@ -1,5 +1,7 @@
 # Roamate: the solver, POI search and persona-based evaluation
 
+**Status:** historical background, not binding. Where it differs from the [implementation plan](../plan/implementation-plan.md), the plan wins (plan §0).
+
 **Date:** 20 October 2026
 **Companion to:** [pre-build-decisions.md](pre-build-decisions.md)
 **Runnable example:** [solver_example.py](solver_example.py) (`pip install ortools`, then `python3 solver_example.py`; all data is fictional)

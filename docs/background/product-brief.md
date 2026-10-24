@@ -1,5 +1,7 @@
 # Roamate — Product Vision and Business Review Brief
 
+**Status:** historical background, not binding. Where it differs from the [implementation plan](../plan/implementation-plan.md), the plan wins (plan §0).
+
 **Purpose:** Describe the proposed product, its user experience, differentiation thesis, social features, and business model so an independent reviewer can assess it against current competitors, customer evidence, and commercial constraints.
 
 **Prepared:** 18 October 2026  

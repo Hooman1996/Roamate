@@ -1,5 +1,7 @@
 # Roamate: base formulation, hotels, utility, fares and TravelPlanner
 
+**Status:** historical background, not binding. Where it differs from the [implementation plan](../plan/implementation-plan.md), the plan wins (plan §0).
+
 **Date:** 24 October 2026
 **Follows:** [solver-retrieval-evaluation.md](solver-retrieval-evaluation.md)
 **Runnable example, updated:** [solver_example.py](solver_example.py) now also picks a hotel and prices taxis with a metered tariff.
