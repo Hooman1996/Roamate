@@ -6,3 +6,5 @@ The first version is a web app; the mobile app follows once the web version is t
 
 - [Implementation plan](docs/plan/implementation-plan.md)
 - [Implementation steps](docs/plan/implementation-steps.md)
+- [Background design notes](docs/background/)
+- [Approved designs](docs/design/)

@@ -1,7 +1,7 @@
 # Roamate implementation plan
 
 **Version:** 2.2 (approved) · 24 October 2026
-**Builds on:** `Roamate_Product_Vision_and_Business_Review_Brief.md` (18 Oct 2026), `pre-build-decisions.md` and `solver-retrieval-evaluation.md` (20 Oct 2026), the runnable `solver_example.py`, and hooman's 11 changes and follow-up of 24 Oct 2026.
+**Builds on:** the [product brief](../background/product-brief.md) (18 Oct 2026), [pre-build decisions](../background/pre-build-decisions.md) and [solver, search and evaluation notes](../background/solver-retrieval-evaluation.md) (20 Oct 2026), the runnable [solver_example.py](../background/solver_example.py), and hooman's 11 changes and follow-up of 24 Oct 2026. Later design notes: [formulation, hotels, fares and TravelPlanner](../background/formulation-hotels-fares-travelplanner.md) (24 Oct 2026, proposals not yet in this plan).
 **Companion files:** [implementation-steps.md](implementation-steps.md) (every step title as a checklist) and the visual roadmap.
 
 ---
