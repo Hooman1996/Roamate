@@ -1,6 +1,6 @@
 # Roamate implementation steps
 
-**Version:** 2.3 (approved) · 24 October 2026
+**Version:** 2.4 (approved) · 24 October 2026
 
 Every step starts only after its design is approved (M0) and its short step brief gets a go-ahead. Until Web Alpha (end of M10), steps are committed directly to `main`; after that, each step is a branch named after its ID (`m11-2-stop-locks`) and a pull request. Details for each milestone are in [implementation-plan.md](implementation-plan.md).
 
@@ -78,7 +78,7 @@ Every step starts only after its design is approved (M0) and its short step brie
 ### M6. City review and publishing
 - [ ] **M6.1** Build the Admin → Cities page with add city and stage progress
 - [ ] **M6.2** Build the Admin → Review page for places and hotels (bulk approve, edit, reject, gaps highlighted)
-- [ ] **M6.3** Add the tariff form: taxi tariff and transit ticket prices with source link and valid dates
+- [ ] **M6.3** Add the tariff form: taxi tariff, transit ticket prices and rush-hour factors with source link and valid dates
 - [ ] **M6.4** Add auto-approve rules for auto mode
 - [ ] **M6.5** Write the Publish stage: places, hotels and media to Postgres, vectors to Qdrant
 - [ ] **M6.6** Extract the city map file (PMTiles) and serve it with local map styles
@@ -92,12 +92,13 @@ Every step starts only after its design is approved (M0) and its short step brie
 - [ ] **M7.1** Write utility scoring from separate features (interest match, rerank, quality, iconic)
 - [ ] **M7.2** Get walking and driving matrices from the routing service, with labeled distance estimates as fallback
 - [ ] **M7.3** Add taxi fares from the city tariff and the transit day pass
-- [ ] **M7.4** Port the OR-Tools model from `solver_example.py` to `planning/solver.py` on catalog data
-- [ ] **M7.5** Add opening hours by weekday, lunch, must-dos, budget, walking cap, pace and category caps
-- [ ] **M7.6** Add the hotel filter, shortlist and per-hotel solve with the best-total choice
-- [ ] **M7.7** Add Budget, Balanced and Comfort parameter sets and the diversity rule
-- [ ] **M7.8** Add deterministic test mode and solver tests on the sample briefs
-- [ ] **M7.9** Build the Lab → Solver page
+- [ ] **M7.4** Add rush-hour traffic factors per city and calibrate them against real trip times
+- [ ] **M7.5** Port the OR-Tools model from `solver_example.py` to `planning/solver.py` on catalog data
+- [ ] **M7.6** Add opening hours by weekday, lunch, must-dos, budget, walking cap, pace and category caps
+- [ ] **M7.7** Add the hotel filter, shortlist and per-hotel solve with the best-total choice
+- [ ] **M7.8** Add Budget, Balanced and Comfort parameter sets and the diversity rule
+- [ ] **M7.9** Add deterministic test mode and solver tests on the sample briefs
+- [ ] **M7.10** Build the Lab → Solver page
 
 ### M8. Validator, budget and search
 - [ ] **M8.1** Write the independent validator

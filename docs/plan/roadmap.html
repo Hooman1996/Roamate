@@ -1,0 +1,251 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<style>body{margin:0;font:14px system-ui,sans-serif}[hidden]{display:none!important}</style>
+</head>
+<body>
+<title>Roamate Roadmap</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Overpass:wght@400;600;800&family=Overpass+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a transit line. Milestones are stations, phases are line colors, releases are interchanges. */
+:root {
+  --bg: #f5f7fa;
+  --surface: #ffffff;
+  --fg: #17202b;
+  --muted: #5a6675;
+  --rule: #d9dfe7;
+  --chip: #eaeef3;
+  --l1: #5b6b7f;
+  --l2: #1f68c9;
+  --l3: #17885a;
+  --l4: #c27a05;
+  --l5: #c7402f;
+  --l6: #6d47c2;
+  --l7: #0f7f8c;
+  --l8: #a8376f;
+  --focus: #1f68c9;
+  --display: "Overpass", "Helvetica Neue", Arial, sans-serif;
+  --body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --mono: "Overpass Mono", ui-monospace, "SF Mono", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #10161e; --surface: #18212c; --fg: #e6ebf1; --muted: #9aa7b6; --rule: #2a3644; --chip: #223040;
+    --l1: #8d9bae; --l2: #5c9cf0; --l3: #3fbf86; --l4: #eda93a; --l5: #ef7564; --l6: #a283ec; --l7: #3cc3d1; --l8: #e57fb2; --focus: #5c9cf0;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #10161e; --surface: #18212c; --fg: #e6ebf1; --muted: #9aa7b6; --rule: #2a3644; --chip: #223040;
+  --l1: #8d9bae; --l2: #5c9cf0; --l3: #3fbf86; --l4: #eda93a; --l5: #ef7564; --l6: #a283ec; --l7: #3cc3d1; --l8: #e57fb2; --focus: #5c9cf0;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg); font-family: var(--body); font-size: 15px; line-height: 1.5;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  padding-block: 32px 64px;
+}
+.wrap { max-width: 920px; margin: 0 auto; display: grid; grid-template-columns: minmax(0, 1fr); gap: 40px; }
+.wrap > * { min-width: 0; }
+h1, h2, h3 { font-family: var(--display); text-wrap: balance; margin: 0; }
+h1 { font-size: clamp(30px, 5vw, 44px); font-weight: 800; letter-spacing: -0.01em; line-height: 1.05; }
+h2 { font-size: 20px; font-weight: 800; }
+.lede { color: var(--muted); max-width: 62ch; margin: 10px 0 0; }
+.eyebrow { font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+
+/* Overview strip */
+.strip-box { overflow-x: auto; padding-bottom: 4px; }
+.strip { display: flex; align-items: center; min-width: 760px; gap: 0; position: relative; padding: 30px 64px 30px 0; }
+.seg { flex-grow: var(--w); height: 10px; background: var(--c); position: relative; border: 0; padding: 0; cursor: pointer; }
+.seg:first-child { border-radius: 5px 0 0 5px; }
+.seg:last-child { border-radius: 0 5px 5px 0; }
+.seg::after { content: ""; position: absolute; right: -7px; top: -4px; width: 14px; height: 14px; border-radius: 50%; background: var(--surface); border: 3px solid var(--c); z-index: 1; }
+.seg .lbl { position: absolute; left: 50%; transform: translateX(-50%); top: 16px; font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.seg.sel .lbl { color: var(--fg); font-weight: 600; }
+.seg.release::after { width: 22px; height: 22px; right: -11px; top: -8px; border-width: 4px; }
+.seg .rel { position: absolute; right: -60px; width: 120px; text-align: center; top: -26px; font-family: var(--display); font-size: 12px; font-weight: 800; color: var(--fg); }
+.seg:focus-visible { outline: 2px solid var(--focus); outline-offset: 4px; }
+
+.legend { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 4px; }
+.legend span { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.legend i { width: 18px; height: 6px; border-radius: 3px; background: var(--c); display: inline-block; }
+
+/* Line */
+.toolbar { display: flex; justify-content: space-between; align-items: end; flex-wrap: wrap; gap: 12px; }
+button.ghost { font: 600 13px var(--body); background: var(--surface); color: var(--fg); border: 1px solid var(--rule); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+button.ghost:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.line { list-style: none; margin: 0; padding: 0; }
+.phase-head { display: grid; grid-template-columns: 44px 1fr; align-items: center; padding: 18px 0 6px; }
+.phase-head .tag { grid-column: 2; font-family: var(--mono); font-size: 12px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--c); font-weight: 600; }
+.station { display: grid; grid-template-columns: 44px 1fr; position: relative; }
+.station::before { content: ""; position: absolute; left: 18px; top: 0; bottom: 0; width: 8px; background: var(--c); }
+.station.first::before { top: 22px; }
+.station.last::before { bottom: calc(100% - 22px); }
+.dot { grid-column: 1; width: 22px; height: 22px; margin: 11px 0 0 11px; border-radius: 50%; background: var(--surface); border: 4px solid var(--c); position: relative; z-index: 1; }
+.station.release .dot { width: 30px; height: 30px; margin: 7px 0 0 7px; border-width: 5px; }
+.card { grid-column: 2; padding: 8px 0 14px; min-width: 0; }
+.st-btn { width: 100%; text-align: left; background: none; border: 0; padding: 4px 0; color: inherit; cursor: pointer; display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; font: inherit; }
+.st-btn:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; border-radius: 4px; }
+.mid { font-family: var(--mono); font-weight: 600; font-size: 13px; color: var(--c); min-width: 34px; }
+.st-title { font-family: var(--display); font-weight: 800; font-size: 18px; flex: 1 1 260px; }
+.meta { display: flex; gap: 6px; font-size: 12px; color: var(--muted); }
+.chip { background: var(--chip); border-radius: 4px; padding: 1px 7px; font-family: var(--mono); font-size: 11px; color: var(--muted); white-space: nowrap; }
+.release-flag { display: inline-block; margin: 2px 0 2px 46px; font-family: var(--display); font-weight: 800; font-size: 12px; letter-spacing: 0.04em; text-transform: uppercase; color: var(--bg); background: var(--c); padding: 2px 8px; border-radius: 3px; }
+.detail { margin-top: 8px; padding: 14px 16px; background: var(--surface); border: 1px solid var(--rule); border-radius: 8px; display: grid; gap: 12px; }
+.detail p { margin: 0; max-width: 68ch; }
+.test { border-left: 3px solid var(--c); padding-left: 12px; }
+.test b { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); display: block; font-weight: 600; }
+.steps { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.steps li { display: grid; grid-template-columns: 56px 1fr; gap: 8px; font-size: 14px; }
+.steps code { font-family: var(--mono); font-size: 12px; color: var(--muted); padding-top: 2px; }
+
+/* Later + simple */
+.two { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 24px; }
+.panel { min-width: 0; }
+.panel h2 { margin-bottom: 10px; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+td, th { text-align: left; padding: 7px 8px 7px 0; border-bottom: 1px solid var(--rule); vertical-align: top; }
+th { font-family: var(--mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
+td.when { font-family: var(--mono); font-size: 12px; white-space: nowrap; color: var(--muted); }
+.later { display: flex; flex-wrap: wrap; gap: 8px; }
+.later span { border: 1px dashed var(--rule); border-radius: 6px; padding: 5px 10px; font-size: 13px; color: var(--muted); }
+.foot { font-size: 13px; color: var(--muted); }
+@media (prefers-reduced-motion: no-preference) { .detail { animation: open .18s ease-out; } @keyframes open { from { transform: translateY(-3px); opacity: .6; } } }
+</style>
+
+<div class="wrap">
+  <header>
+    <div class="eyebrow">Implementation roadmap · version 2.4, approved · 24 Oct 2026</div>
+    <h1>Roamate: from first commit to a phone in your hand</h1>
+    <p class="lede">Fifteen milestones in seven phases, plus a TravelPlanner research track. Every design is approved before any code is written. Then come accounts, the model gateway and the city data pipeline, then the solver, and the first working web app (Web Alpha) after M10. A research track on the TravelPlanner benchmark runs next to M11 and M12, real people test the app after M12, and the mobile app reuses the same backend. Work goes on main until Web Alpha, then on branches. Tap any station to see its steps and what you can try when it is done.</p>
+  </header>
+
+  <section aria-label="Overview">
+    <div class="strip-box"><div class="strip" id="strip"></div></div>
+    <div class="legend" id="legend"></div>
+    <p class="foot">Segment length shows rough size: S under a week, M one to two weeks, L two to three weeks, for one developer with AI help. These are guesses, not commitments.</p>
+  </section>
+
+  <section aria-label="Milestones">
+    <div class="toolbar">
+      <h2>The line</h2>
+      <button class="ghost" id="toggleAll" type="button">Expand all</button>
+    </div>
+    <ol class="line" id="line"></ol>
+  </section>
+
+  <section class="two">
+    <div class="panel">
+      <h2>Added only when needed</h2>
+      <table>
+        <thead><tr><th>Start with</th><th>Add later</th><th>When</th></tr></thead>
+        <tbody>
+          <tr><td>Background task + polling</td><td>Separate worker or Celery</td><td class="when">M12, if measured</td></tr>
+          <tr><td>Polling for progress</td><td>Server-Sent Events</td><td class="when">If polling lags</td></tr>
+          <tr><td>Distance-based travel estimates</td><td>Routing engine</td><td class="when">Later</td></tr>
+          <tr><td>Python distance math</td><td>PostGIS</td><td class="when">If queries slow</td></tr>
+          <tr><td>Own small model gateway</td><td>Routing library</td><td class="when">Only if needed</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <h2>After the line ends</h2>
+      <div class="later">
+        <span>Password reset by email</span><span>Group planning and votes</span><span>Share links</span><span>Make this trip mine</span><span>Local routing engine</span><span>Learned ranking</span><span>Visit-time prediction</span><span>Booking integrations</span>
+      </div>
+      <p class="foot">Kept out of the first version on purpose. Groups and share links come before any public feed.</p>
+    </div>
+  </section>
+
+  <p class="foot">Full plan: <code>docs/plan/implementation-plan.md</code> · step checklist: <code>docs/plan/implementation-steps.md</code> in the Roamate repository.</p>
+</div>
+
+<script>
+const MS = [{"id": "M0", "title": "Design and approval", "steps": [["M0.1", "Approve the implementation plan (approved 24 Oct 2026)"], ["M0.2", "Design: infrastructure, shared services, routing service, conda environment and `.env` settings"], ["M0.3", "Design: PostgreSQL schema (every table, column, index, with examples)"], ["M0.4", "Design: Qdrant collections, vectors and payload indexes"], ["M0.5", "Design: MinIO buckets, object layout and access rules"], ["M0.6", "Design: domain data structures (TripBrief with HotelChoice, UtilityFeatures, Itinerary, Scenario, BudgetBreakdown, ValidationReport, ConflictReport, ConstraintDelta)"], ["M0.7", "Design: accounts, sessions, roles and sign-in flows"], ["M0.8", "Design: model gateway: provider config format, chain order and fallback rules"], ["M0.9", "Design: city ingestion stages, review rules and auto-approve thresholds"], ["M0.10", "Design: LangGraph state, nodes, edges, pauses and revision graph"], ["M0.11", "Design: API contract (endpoints, requests, responses, errors)"], ["M0.12", "Design: web screens and navigation (wireframes)"], ["M0.13", "Choose the launch city, candidate embedding models and the first evaluation cases"]], "size": "M", "summary": "Write and approve every design before coding: infrastructure and environment, Postgres schema, Qdrant collections, object storage layout, domain data structures, auth, model gateway, city pipeline, LangGraph graph, API contract, web screens, launch city and evaluation cases. Each design is a file in `docs/design/`.", "test": "read and approve each design; nothing is coded yet."}, {"id": "M1", "title": "Foundation", "steps": [["M1.1", "Create the repository layout and README with run instructions"], ["M1.2", "Add `environment.yml` for the conda env `roamate` (Python 3.12, Node.js 22)"], ["M1.3", "Set up the FastAPI backend skeleton with settings from `.env` and `.env.example`"], ["M1.4", "Add `infra/docker-compose.yml` with the same pinned images as the RagBot server"], ["M1.5", "Add setup scripts for the `roamate` database and user, Qdrant collections and object storage buckets"], ["M1.6", "Add connection clients and a health endpoint for Postgres, Qdrant, object storage, TEI, vLLM and 9Router"], ["M1.7", "Set up the React + Vite + TypeScript web app with Tailwind, React Router and bundled fonts and icons"], ["M1.8", "Build the health page in the web app"], ["M1.9", "Add a build check that fails on any external URL in the built web app"], ["M1.10", "Add ruff, ESLint, Prettier and pre-commit hooks"], ["M1.11", "Add GitHub Actions CI on every push to `main`"]], "size": "S", "summary": "Conda environment, backend and web skeletons, connections and health checks for Postgres, Qdrant, object storage, TEI, vLLM and 9Router, setup scripts for Roamate's database, collections and buckets, local-only frontend assets, lint, tests and CI.", "test": "`conda activate roamate`, start the backend and web app, and see a health page with every service green."}, {"id": "M2", "title": "Accounts and login", "steps": [["M2.1", "Create the user and session tables and their migration"], ["M2.2", "Add password hashing and session handling"], ["M2.3", "Add register, sign in, sign out and current-user endpoints"], ["M2.4", "Add user and admin roles and the admin creation command"], ["M2.5", "Build the sign-up and sign-in pages and protected routes"], ["M2.6", "Add auth tests (hashing, expiry, role checks on every admin route)"]], "size": "S", "summary": "User and session tables, register, sign in, sign out, current user, user and admin roles, an admin creation command, sign-in pages and protected routes in the web app.", "test": "create an account, sign in, sign out; an admin sees the Admin menu and a normal user does not."}, {"id": "M3", "title": "Core data layer", "steps": [["M3.1", "Write the Pydantic domain models from the approved design"], ["M3.2", "Create migrations for city, ingestion, place, media, trip, version, job and LLM call tables"], ["M3.3", "Add the Qdrant collection helpers (create, upsert, hybrid query)"], ["M3.4", "Add the S3 storage helpers with boto3 (upload, read, serve through the backend)"], ["M3.5", "Generate TypeScript types for the web app from the OpenAPI schema"], ["M3.6", "Add test fixtures: sample places, briefs (normal, tight budget, low walking, impossible)"]], "size": "M", "summary": "Migrations for all remaining tables, Pydantic domain models, Qdrant collection and S3 bucket helpers, generated TypeScript types, test fixtures.", "test": "run migrations and setup scripts on an empty database and see every table, collection and bucket created; tests create and read each kind of record."}, {"id": "M4", "title": "Model gateway", "steps": [["M4.1", "Load providers and the chain order from `config/models.yaml` (overridable by `LLM_CHAIN`) and keys from `.env`"], ["M4.2", "Write the OpenAI-compatible client and chain fallback with cool-down"], ["M4.3", "Add OpenRouter model lists (free models only) and set up 9Router on the server"], ["M4.4", "Add structured output with Pydantic validation and one repair retry"], ["M4.5", "Log every attempt to the `llm_call` table"], ["M4.6", "Add the TEI embedding and reranker clients"], ["M4.7", "Add gateway tests with fake providers (fail, timeout, 429, bad JSON)"], ["M4.8", "Build the Lab → Models page"]], "size": "M", "summary": "Providers from `config/models.yaml`, ordered fallback with cool-down, structured output with validation and repair, `llm_call` logging, TEI embedding and reranker clients, Lab → Models page.", "test": "Lab → Models: send a test prompt, stop vLLM, and watch the next provider answer, with each attempt listed."}, {"id": "M5", "title": "City data pipeline", "steps": [["M5.1", "Write the pipeline runner with resumable stages and `ingest_run` tracking"], ["M5.2", "Write the Discover stage (Nominatim and Wikidata)"], ["M5.3", "Write the Collect stage (Overpass and Wikidata) with raw data saved to object storage"], ["M5.4", "Write the Merge stage (OSM–Wikidata matching and duplicates)"], ["M5.5", "Write the Enrich stage: Wikipedia summaries, Commons images with licenses, opening hours"], ["M5.6", "Collect hotels with features from OSM tags and labeled nightly price estimates"], ["M5.7", "Add LLM-estimated tags, visit times and price bands, marked as estimates"], ["M5.8", "Write the Score stage (popularity, rating, iconic status and completeness)"], ["M5.9", "Add the `ingest_city` command and stage tests on recorded data"]], "size": "L", "summary": "Discover, collect, merge, enrich, score, with resumable stages, raw data in object storage, images with licenses, hotels with features and labeled price estimates, LLM-estimated fields marked, and a command-line entry point.", "test": "run the ingest command for the launch city and inspect the candidates, their sources and images."}, {"id": "M6", "title": "City review and publishing", "steps": [["M6.1", "Build the Admin → Cities page with add city and stage progress"], ["M6.2", "Build the Admin → Review page for places and hotels (bulk approve, edit, reject, gaps highlighted)"], ["M6.3", "Add the tariff form: taxi tariff, transit ticket prices and rush-hour factors with source link and valid dates"], ["M6.4", "Add auto-approve rules for auto mode"], ["M6.5", "Write the Publish stage: places, hotels and media to Postgres, vectors to Qdrant"], ["M6.6", "Extract the city map file (PMTiles) and serve it with local map styles"], ["M6.7", "Set up the routing service and build the city's routing data when publishing"], ["M6.8", "Ingest, review and publish the launch city"], ["M6.9", "Add a second city through the UI only and record what was needed"]], "size": "L", "summary": "Admin Cities and Review screens, taxi and transit tariff entry, auto-approve rules, publish to Postgres, Qdrant and object storage, local map tiles, the routing service with the city's routing data, the launch city reviewed and published, a second city added through the UI only.", "test": "Admin → Cities → Add city, follow the stages, approve places in Review, publish, and see the city's places on its local map."}, {"id": "M7", "title": "Solver and scenarios", "steps": [["M7.1", "Write utility scoring from separate features (interest match, rerank, quality, iconic)"], ["M7.2", "Get walking and driving matrices from the routing service, with labeled distance estimates as fallback"], ["M7.3", "Add taxi fares from the city tariff and the transit day pass"], ["M7.4", "Add rush-hour traffic factors per city and calibrate them against real trip times"], ["M7.5", "Port the OR-Tools model from `solver_example.py` to `planning/solver.py` on catalog data"], ["M7.6", "Add opening hours by weekday, lunch, must-dos, budget, walking cap, pace and category caps"], ["M7.7", "Add the hotel filter, shortlist and per-hotel solve with the best-total choice"], ["M7.8", "Add Budget, Balanced and Comfort parameter sets and the diversity rule"], ["M7.9", "Add deterministic test mode and solver tests on the sample briefs"], ["M7.10", "Build the Lab → Solver page"]], "size": "M", "summary": "Utility scoring from separate features, travel matrices from the routing service, tariff-based taxi fares, rush-hour factors and the transit day pass, OR-Tools model on catalog data, all constraints, hotel shortlist and per-hotel solve, three scenarios with the diversity rule, deterministic test mode, Lab → Solver page.", "test": "Lab → Solver: pick a city and a sample brief, ask for a hotel with breakfast, change weights and caps, and compare the hotel totals and the Budget, Balanced and Comfort plans."}, {"id": "M8", "title": "Validator, budget and search", "steps": [["M8.1", "Write the independent validator"], ["M8.2", "Add property-based validator tests with Hypothesis"], ["M8.3", "Write the budget breakdown with hotel nights, scope and quoted/estimated/unknown labels"], ["M8.4", "Write the feasibility precheck and the conflict finder (smallest set of clashing constraints) with clear user choices"], ["M8.5", "Write hybrid search (dense + BM25) with reranking feeding utility"], ["M8.6", "Label 20–30 briefs with good candidate places"], ["M8.7", "Compare embedding models and search methods by recall@50 and pick the model"], ["M8.8", "Build the Lab → Validator and Lab → Search pages"]], "size": "M", "summary": "Independent validator with Hypothesis tests, budget breakdown including the hotel nights, feasibility precheck, conflict finder, Qdrant hybrid search with reranking feeding utility, retrieval label set, embedding model comparison, Lab → Validator and Lab → Search pages.", "test": "break an itinerary in Lab → Validator and see it caught; compare search methods and embedding models with measured recall in Lab → Search."}, {"id": "M9", "title": "LangGraph planning workflow", "steps": [["M9.1", "Define the graph state and the form-path graph (precheck, retrieve, solve, validate, save)"], ["M9.2", "Add Postgres checkpoints and resume after restart"], ["M9.3", "Write the job runner and job API (start, status, events, resume)"], ["M9.4", "Add the intake node (free text → TripBrief, including hotel preferences) with versioned prompts"], ["M9.5", "Add the clarify and confirm pauses"], ["M9.6", "Add the hotel node (fixed hotel, or shortlist and choose)"], ["M9.7", "Run the three scenarios in parallel"], ["M9.8", "Add the validate and repair loop (max 2 tries)"], ["M9.9", "Add the weather provider (forecast vs seasonal, cached)"], ["M9.10", "Add the curation node (\"why this fits you\")"], ["M9.11", "Add the story node, bound to the validated itinerary"], ["M9.12", "Build the 30-case intake eval set and scoring script"], ["M9.13", "Build the Lab → Intake and Lab → Runs pages"]], "size": "L", "summary": "Graph state and nodes for the form path, intake node (including hotel preferences) with clarify pause, hotel node, confirm pause, parallel scenarios, validate and repair loop, budget, curation and story nodes, Postgres checkpoints and resume, job runner and job API, weather provider, intake eval set, Lab → Intake and Lab → Runs pages.", "test": "start a plan through `/docs` or Lab → Runs, answer a clarification, restart the backend mid-run and see it resume."}, {"id": "M10", "title": "Web app: plan, explore, save", "steps": [["M10.1", "Build the app shell, navigation and API client with TanStack Query"], ["M10.2", "Build the new-trip page: free-text box and step form"], ["M10.3", "Build the clarify and confirm screens"], ["M10.4", "Build the planning progress screen"], ["M10.5", "Build the trip view with the scenario switcher and the hotel choice with runner-ups"], ["M10.6", "Build the Story tab with media labels and credits"], ["M10.7", "Build the Timeline tab"], ["M10.8", "Build the Map tab with MapLibre and the city's local tiles"], ["M10.9", "Build the Budget tab with scope, labels and unknowns"], ["M10.10", "Link selection across tabs and add the place details drawer"], ["M10.11", "Build the My trips page"], ["M10.12", "Add the Playwright end-to-end test: sign in, plan, explore, reopen"], ["M10.13", "Run the Web Alpha check, tag `v0.1-alpha`, switch to branches and pull requests"]], "size": "L", "summary": "App shell, new-trip form with free text, clarify and confirm screens, progress screen, trip view with Story, Timeline, Map and Budget, linked selection, place drawer, My trips, Playwright end-to-end test, Web Alpha check, tag `v0.1-alpha`.", "test": "the full flow in a browser: sign in, describe a trip, confirm, compare scenarios, read the story, check the map and costs, sign out and back in, reopen it."}, {"id": "M11", "title": "Revision and approval", "steps": [["M11.1", "Add the change parser node (change request → ConstraintDelta)"], ["M11.2", "Add stop locks in the solver"], ["M11.3", "Build the revision graph: re-solve, validate, save a new version"], ["M11.4", "Compute the \"what changed\" diff (stops, time, walking, cost)"], ["M11.5", "Build the revision panel, quick-change chips and diff view"], ["M11.6", "Add approve and version history in the web app"], ["M11.7", "Add outbound booking links with honest states"], ["M11.8", "Add the Playwright test: \"less walking on day 2\" → approve → reopen"]], "size": "M", "summary": "Revision graph with `ConstraintDelta`, stop locks, \"what changed\" diff, version history, approve, outbound booking links that never mark anything as booked, end-to-end test.", "test": "\"less walking on day 2\" on a saved trip, see the diff, approve, and open the previous version."}, {"id": "M12", "title": "Evaluation, hardening and deployment", "steps": [["M12.1", "Build the persona generator and simulated-user runner"], ["M12.2", "Add graders: deterministic checks and an LLM judge with a rubric"], ["M12.3", "Add the regression suite to CI and a manual full-eval workflow"], ["M12.4", "Add metamorphic solver tests"], ["M12.5", "Measure p50/p95 time to first result, completion and revision"], ["M12.6", "Track usage and failures per provider; friendly errors for every failure"], ["M12.7", "Run an accessibility pass (keyboard, contrast, screen reader, reduced motion)"], ["M12.8", "Decide on a separate worker or Celery from measurements; add only if needed"], ["M12.9", "Deploy the backend and web app on the server next to the existing services"], ["M12.10", "Build the Lab → Evals page"], ["M12.11", "Run the Web Beta with a few testers and collect feedback"]], "size": "L", "summary": "Persona-based evaluation harness, graders, regression suite in CI, metamorphic solver tests, p50/p95 timings, provider quota and failure tracking, friendly errors, accessibility pass, a worker process or Celery only if measurements require it, deployment on the server next to the existing services, Lab → Evals page, a few testers.", "test": "the deployed web app from another computer; the Evals page shows violation rate, intake accuracy, recall and latency."}, {"id": "R1", "title": "TravelPlanner setup and baseline", "steps": [["R1.1", "Download the TravelPlanner dataset and sandbox database"], ["R1.2", "Run the official validation scorer in the manual evaluation workflow"], ["R1.3", "Record the published baselines"], ["R1.4", "Write the paper claim and experiment plan (for approval)"]], "size": "S", "summary": "Download the dataset (train 45, validation 180, test 1,000 queries) and its sandbox database, run the official validation scorer in the manual evaluation workflow, record published baselines, and write down the paper claim before any experiment (quality beyond pass rate, small free models, or a city-level benchmark).", "test": "run the official scorer on a sample submission and see delivery, commonsense, hard-constraint and final pass rates."}, {"id": "R2", "title": "TravelPlanner adapter and solver mode", "steps": [["R2.1", "Design: TravelPlanner constraint spec schema (for approval)"], ["R2.2", "Write the query → constraint spec adapter through the model gateway"], ["R2.3", "Load the sandbox data (flights, distances, restaurants, attractions, accommodation)"], ["R2.4", "Write the CP-SAT model for multi-city, day-level plans"], ["R2.5", "Write the validator for TravelPlanner's commonsense and hard constraints"], ["R2.6", "Render plans to the official submission JSONL"], ["R2.7", "Score the 180 validation queries"]], "size": "L", "summary": "Query → Roamate constraint spec (a JSON schema filled by the LLM through the gateway, not generated solver code), a loader for the sandbox data, a CP-SAT model for TravelPlanner's multi-city, day-level plans (city order, inter-city transport, one accommodation per city with room type, house rules and minimum nights, meals, attractions, budget), a renderer to the official submission JSONL, and a validator for its constraints.", "test": "run the 180 validation queries and get a scored submission file."}, {"id": "R3", "title": "Experiments and submission", "steps": [["R3.1", "Run the validation set for each model in the chain"], ["R3.2", "Build the results table (pass rates, plan cost and quality, cost per query) on Lab → Evals"], ["R3.3", "Optional: run the TripScore benchmark"], ["R3.4", "Submit the test set once to the official leaderboard"], ["R3.5", "Write the workshop-paper draft"]], "size": "M", "summary": "Results table per model in the chain (pass rates, plan cost and quality, LLM cost per query), optional second benchmark TripScore, a single final test-set submission to the official leaderboard, and a workshop-paper draft. Follows the benchmark's rules: no tuning on the test set.", "test": "the Lab → Evals page shows the TravelPlanner table per model, and the leaderboard shows the one submission."}, {"id": "M13", "title": "Mobile app core", "steps": [["M13.1", "Design: mobile screens, navigation and map library (for approval)"], ["M13.2", "Move shared TypeScript code (API types, formatting, labels) into `shared/`"], ["M13.3", "Set up the Expo app with Expo Router, sign-in and the API client"], ["M13.4", "Build trip intake on mobile"], ["M13.5", "Build planning progress on mobile"], ["M13.6", "Build the trip view tabs: Story, Timeline, Map, Budget"], ["M13.7", "Build revision and approval on mobile"], ["M13.8", "Run the brief's demo flow in the Android emulator"]], "size": "L", "summary": "Expo app with Expo Router, shared TypeScript code moved into `shared/`, sign-in, trip intake, progress, trip view tabs, map with the city's local tiles, revision and approval, tested in the Android emulator.", "test": "the brief's demo flow in the Android emulator against the same backend."}, {"id": "M14", "title": "Mobile polish and tester release", "steps": [["M14.1", "Make saved trips viewable offline"], ["M14.2", "Check reduced motion, screen readers and slow networks"], ["M14.3", "Add app icon, splash screen and store-ready names"], ["M14.4", "Ship internal test builds with EAS (Android, then iOS)"], ["M14.5", "Collect tester feedback and plan the next phase"]], "size": "M", "summary": "Offline view of saved trips, accessibility and slow-network checks, app icon and splash, internal test builds with EAS (Android, then iOS).", "test": "install the test build on a real phone."}];
+const PHASES = [
+  { name: "Design and approval", c: "--l1", ids: ["M0"], release: "Designs approved", flag: "Designs approved, coding starts" },
+  { name: "Foundation and accounts", c: "--l2", ids: ["M1","M2","M3"] },
+  { name: "Models and city data", c: "--l7", ids: ["M4","M5","M6"] },
+  { name: "Planning engine", c: "--l4", ids: ["M7","M8"] },
+  { name: "AI workflow and web app", c: "--l3", ids: ["M9","M10"], release: "Web Alpha" },
+  { name: "Revise, evaluate, deploy", c: "--l5", ids: ["M11","M12"], release: "Web Beta" },
+  { name: "Research track: TravelPlanner, alongside M11–M12", c: "--l8", ids: ["R1","R2","R3"] },
+  { name: "Mobile app", c: "--l6", ids: ["M13","M14"], release: "Mobile testers" },
+];
+const W = { S: 1, M: 2, L: 3 };
+const SIZE = { S: "S · <1 wk", M: "M · 1–2 wk", L: "L · 2–3 wk" };
+const byId = Object.fromEntries(MS.map(m => [m.id, m]));
+const open = new Set(["M0"]);
+let selected = "M0";
+
+function esc(s) { return s.replace(/[&<>"]/g, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[ch])); }
+function code(s) { return esc(s).replace(/`([^`]+)`/g, "<code>$1</code>"); }
+
+function render() {
+  const strip = document.getElementById("strip");
+  const line = document.getElementById("line");
+  strip.innerHTML = ""; line.innerHTML = "";
+  PHASES.forEach((p, pi) => {
+    const color = `var(${p.c})`;
+    const head = document.createElement("li");
+    head.className = "phase-head"; head.style.setProperty("--c", color);
+    head.innerHTML = `<span class="tag">Phase ${pi + 1} · ${esc(p.name)}</span>`;
+    line.appendChild(head);
+    p.ids.forEach((id, i) => {
+      const m = byId[id];
+      const last = i === p.ids.length - 1;
+      const rel = last && p.release;
+      const seg = document.createElement("button");
+      seg.type = "button";
+      seg.className = "seg" + (rel ? " release" : "") + (selected === id ? " sel" : "");
+      seg.style.setProperty("--c", color); seg.style.setProperty("--w", W[m.size]);
+      seg.setAttribute("aria-label", `${id} ${m.title}`);
+      seg.innerHTML = `<span class="lbl">${id}</span>` + (rel ? `<span class="rel">${esc(p.release)}</span>` : "");
+      seg.onclick = () => { open.add(id); selected = id; render(); document.getElementById("st-" + id).scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth", block: "start" }); };
+      strip.appendChild(seg);
+
+      const li = document.createElement("li");
+      li.id = "st-" + id;
+      li.className = "station" + (i === 0 ? " first" : "") + (last ? " last" : "") + (rel ? " release" : "");
+      li.style.setProperty("--c", color);
+      const isOpen = open.has(id);
+      li.innerHTML = `<span class="dot" aria-hidden="true"></span>
+        <div class="card">
+          <button class="st-btn" type="button" aria-expanded="${isOpen}" aria-controls="d-${id}">
+            <span class="mid">${id}</span><span class="st-title">${esc(m.title)}</span>
+            <span class="meta"><span class="chip">${SIZE[m.size]}</span><span class="chip">${m.steps.length} steps</span></span>
+          </button>
+          ${isOpen ? `<div class="detail" id="d-${id}">
+            <p>${code(m.summary)}</p>
+            <div class="test"><b>You can test</b>${code(m.test)}</div>
+            <ol class="steps">${m.steps.map(s => `<li><code>${s[0]}</code><span>${code(s[1])}</span></li>`).join("")}</ol>
+          </div>` : ""}
+        </div>`;
+      li.querySelector(".st-btn").onclick = () => { isOpen ? open.delete(id) : open.add(id); selected = id; render(); };
+      line.appendChild(li);
+      if (rel) {
+        const flag = document.createElement("li");
+        flag.style.setProperty("--c", color);
+        flag.innerHTML = `<span class="release-flag">${esc(p.flag || p.release + " ready")}</span>`;
+        line.appendChild(flag);
+      }
+    });
+  });
+  document.getElementById("toggleAll").textContent = open.size === MS.length ? "Collapse all" : "Expand all";
+}
+document.getElementById("legend").innerHTML = PHASES.map((p, i) => `<span style="--c: var(${p.c})"><i></i>${i + 1}. ${p.name}</span>`).join("");
+document.getElementById("toggleAll").onclick = () => {
+  if (open.size === MS.length) open.clear(); else MS.forEach(m => open.add(m.id));
+  render();
+};
+render();
+</script>
+
+</body>
+</html>

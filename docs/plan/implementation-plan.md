@@ -1,8 +1,8 @@
 # Roamate implementation plan
 
-**Version:** 2.3 (approved) · 24 October 2026
+**Version:** 2.4 (approved) · 24 October 2026
 **Builds on:** the [product brief](../background/product-brief.md) (18 Oct 2026), [pre-build decisions](../background/pre-build-decisions.md) and [solver, search and evaluation notes](../background/solver-retrieval-evaluation.md) (20 Oct 2026), the runnable [solver_example.py](../background/solver_example.py), and hooman's 11 changes and follow-up of 24 Oct 2026. Later design notes: [formulation, hotels, fares and TravelPlanner](../background/formulation-hotels-fares-travelplanner.md) (24 Oct 2026, added to this plan in version 2.3).
-**Companion files:** [implementation-steps.md](implementation-steps.md) (every step title as a checklist) and the visual roadmap.
+**Companion files:** [implementation-steps.md](implementation-steps.md) (every step title as a checklist) and the visual roadmap, [roadmap.html](roadmap.html) (open it in a browser).
 
 ---
 
@@ -44,7 +44,7 @@ The brief's demo scenario, run in a browser: a user signs in, enters a 3-day tri
 | 9 | Embedding model to be chosen | §8. A measured comparison of candidate models in M8 |
 | 10 | All frontend files local, no internet needed for them | §11. Bundled packages and fonts, local map tiles, images served from our own object storage, and a build check |
 | 11 | Work on `main` for the early phases | §13. Direct commits to `main` until Web Alpha, then branches and pull requests |
-| 12 | Hotels, taxi fares, local routing and the TravelPlanner research track (decided 24 Oct 2026) | §4 routing service, §7 hotel and tariff data, §9 hotel collection, §10 hotel choice and fares, Research track R1–R3 |
+| 12 | Hotels, taxi fares, local routing with rush-hour factors, and the TravelPlanner research track (decided 24 Oct 2026) | §4 routing service, §7 hotel and tariff data, §9 hotel collection, §10 hotel choice and fares, Research track R1–R3 |
 
 ---
 
@@ -57,7 +57,7 @@ We start with the smallest version of each piece and add a heavier tool only whe
 | Background work | A `planning_job` table; the API runs the graph as an asyncio background task; the web app polls the job every second | Redis + Celery or a separate worker process, if measurements in M12 show we need it |
 | Live progress | Polling `GET /jobs/{id}` | Server-Sent Events, if polling feels laggy |
 | Geography | Distances computed in Python (haversine × detour factor) | PostGIS, if spatial queries get slow |
-| Travel times | Walking and driving times and distances from our own routing service, built from each city's OpenStreetMap data; metro times estimated from distance and labeled "estimated" | Public transport times from timetable (GTFS) data through OpenTripPlanner |
+| Travel times | Walking and driving times and distances from our own routing service, built from each city's OpenStreetMap data; metro times estimated from distance and labeled "estimated"; driving times multiplied by per-city rush-hour factors | Public transport times from timetable (GTFS) data; historical speeds per street; a live traffic check for same-day trips |
 | Itinerary storage | The whole itinerary as JSON inside a trip version row | Normalized tables, only if we need to query inside itineraries |
 | LLM access | Our own small gateway over OpenAI-compatible endpoints | A routing library, only if our gateway stops being enough |
 | Travel profile | Defaults stored on the user | A separate profile model with history |
@@ -194,7 +194,7 @@ These are drafts so the shape of the system is visible. Each one becomes a full 
 | `place_candidate` | id, city_id, ingest_run_id, osm_id, wikidata_id, name, lat, lon, raw (JSON), proposed (JSON), field_sources (JSON), quality_score, status (`pending` / `approved` / `rejected` / `merged`), reviewed_by, reviewed_at | What the pipeline found, before review |
 | `place` | id, city_id, candidate_id, name, category, lat, lon, description, interest_tags (JSON), visit_minutes, price_per_person, opening_hours (JSON by weekday), popularity, rating, rating_count, iconic (0–1), accessibility_notes, website_url, booking_url, osm_id, wikidata_id, field_sources (JSON), updated_at | Published places the planner may use |
 | `hotel` | id, city_id, osm_id, name, lat, lon, stars, features (JSON: breakfast, pool, parking, step-free access, …), price_per_night_estimate, price_source, price_fetched_at, rating, rating_count, field_sources (JSON), status | Hotels the planner may suggest; prices are labeled estimates until a provider is connected |
-| `city_tariff` | id, city_id, mode (`taxi` / `transit`), valid_from, valid_to, flag_fall, per_km, per_min, surcharges (JSON: night, holiday, large vehicle), single_ticket_price, day_pass_price, source_url, entered_by | Regulated fares, one row per city, mode and period |
+| `city_tariff` | id, city_id, mode (`taxi` / `transit`), valid_from, valid_to, flag_fall, per_km, per_min, surcharges (JSON: night, holiday, large vehicle), single_ticket_price, day_pass_price, traffic_factors (JSON: time of day → multiplier), source_url, entered_by | Regulated fares, one row per city, mode and period |
 | `media_asset` | id, place_id, city_id, kind (`exact_venue` / `area` / `generic_city` / `ai_decorative`), object_key, original_url, license, author, attribution_text, width, height | Images in object storage with their credits |
 | `trip` | id, user_id, city_id, title, created_at, current_version_id, approved_version_id | A user's trip |
 | `trip_version` | id, trip_id, parent_version_id, number, brief (JSON), scenarios (JSON), selected_scenario, story (JSON), change_summary, status (`draft` / `approved`), created_at | Immutable plan versions |
@@ -370,7 +370,8 @@ The whole planning flow is one LangGraph graph from its first version.
 - Tests use a fixed solution limit instead of a time limit so results repeat.
 - **Utility** (first, hand-written version): $u_i = 100 \cdot (w_1\,\text{interest match} + w_2\,\text{rerank} + w_3\,\text{quality} + w_4\,\text{iconic})$. Price and duration stay out of $u_i$ because the solver already charges for money and time. Simple caps (e.g. at most two museums a day) stop repetition. A learned version replaces it only if it beats this one on held-out data.
 - **Hotel choice:** when the hotel is already booked it is the fixed start and end of every day. Otherwise: filter hotels by required features and price cap, shortlist the top 5–10 by feature match, rating and location, solve the trip from each shortlisted hotel with Balanced weights and the money left after the nights, and pick the best total (trip objective + money weight × hotel cost − hotel bonus). The three scenarios are then solved from the chosen hotel, and the runner-up hotels are shown so the traveler sees the trade-off.
-- **Fares:** taxi fare per leg = flag fall + per-km × road km + per-minute × road minutes, from the city's tariff and the routing matrix, times a time-of-day factor, shown as a range. Public transport: single tickets, or a day pass modeled as one yes/no per day (pay once if any transit leg is used that day). The mode per leg is the one with the lowest weighted cost of time, money and walking, with both options offered to the solver when the budget is tight.
+- **Fares:** taxi fare per leg = flag fall + per-km × road km + per-minute × road minutes, from the city's tariff and the routing matrix, times a time-of-day factor, shown as a range.
+- **Traffic:** the routing service gives free-flow times (no traffic). Driving times are multiplied by per-city time-of-day factors (e.g. ×1.3 at peak hours, ×1.1 midday), stored with the city's tariff and calibrated once against a few hundred real trip times at different hours. Buffers between stops absorb the rest. Walking times need no traffic correction. Public transport: single tickets, or a day pass modeled as one yes/no per day (pay once if any transit leg is used that day). The mode per leg is the one with the lowest weighted cost of time, money and walking, with both options offered to the solver when the budget is tight.
 
 ### Validator and infeasibility
 
@@ -451,7 +452,7 @@ Admin Cities and Review screens, taxi and transit tariff entry, auto-approve rul
 ### Phase 4 — Planning engine
 
 **M7. Solver and scenarios (M)**
-Utility scoring from separate features, travel matrices from the routing service, tariff-based taxi fares and the transit day pass, OR-Tools model on catalog data, all constraints, hotel shortlist and per-hotel solve, three scenarios with the diversity rule, deterministic test mode, Lab → Solver page.
+Utility scoring from separate features, travel matrices from the routing service, tariff-based taxi fares, rush-hour factors and the transit day pass, OR-Tools model on catalog data, all constraints, hotel shortlist and per-hotel solve, three scenarios with the diversity rule, deterministic test mode, Lab → Solver page.
 *You can test:* Lab → Solver: pick a city and a sample brief, ask for a hotel with breakfast, change weights and caps, and compare the hotel totals and the Budget, Balanced and Comfort plans.
 
 **M8. Validator, budget and search (M)**
@@ -506,7 +507,7 @@ Offline view of saved trips, accessibility and slow-network checks, app icon and
 
 ### Later (not planned in detail yet)
 
-Password reset by email, private group planning (invite, vote, lock, approve), share links and "Make this trip mine", learned ranking from saves and skips, visit-duration prediction, public transport routing with GTFS (OpenTripPlanner), moving between hotels or cities in one trip, booking integrations after separate validation.
+Password reset by email, private group planning (invite, vote, lock, approve), share links and "Make this trip mine", learned ranking from saves and skips, visit-duration prediction, public transport routing with GTFS (OpenTripPlanner), historical per-street speed profiles in the routing service, a live traffic check (paid API) for the taxi legs of same-day trips, moving between hotels or cities in one trip, booking integrations after separate validation.
 
 ---
 
