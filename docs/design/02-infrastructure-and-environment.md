@@ -20,6 +20,7 @@ Roamate reuses the containers already running for RagBot. Default addresses belo
 | TEI reranker | `tei-reranker` | `http://localhost:7998` | Nothing stored; read-only use |
 | vLLM | `gemma4-vllm` | `http://localhost:8000/v1` | Nothing stored; read-only use |
 | 9Router | not running yet | `http://localhost:20128/v1` | Installed in M4.3, only if we decide to use it |
+| Routing | new: `roamate-routing` | `http://localhost:8002` | Roamate's own service; its data is built from each published city's OpenStreetMap extract (§2a) |
 
 Roamate's own processes:
 
@@ -43,6 +44,19 @@ In production (M12) the web app is built into static files and served by the bac
 
 The admin logins for Postgres and MinIO are used only by the one-time setup scripts, typed in when the script runs. They are never stored in Roamate's `.env`.
 
+### 2a. Routing service: Valhalla recommended
+
+The plan adds a self-hosted routing service for walking and driving times and distances (decided 24 Oct 2026). Two open-source engines fit:
+
+| | Valhalla | OSRM |
+| --- | --- | --- |
+| Cities | One service serves every city; adding a city adds its extract to the tile build | One data set per process; adding a city means a merged extract or another process |
+| Travel modes | Walking, driving, cycling from one service; public transport (GTFS) possible later | One mode (profile) per process, so walking and driving need two |
+| Distance/time matrix | `sources_to_targets`; fine for the 30–60 candidates per trip | `table`; faster on very large matrices |
+| License | MIT | BSD-2 |
+
+**Recommendation: Valhalla**, because "adding a city is easy" matters more to us than raw matrix speed, and one service covers both modes. It runs as one container (`roamate-routing`, port 8002, image tag pinned in M1) with its data in a Docker volume. When a city is published (M6), its extract is downloaded, the tiles are rebuilt, and the service is reloaded. If the service is down, the planner falls back to distance estimates labeled `Estimated`.
+
 ---
 
 ## 3. A fresh machine without the RagBot services
@@ -56,6 +70,7 @@ The admin logins for Postgres and MinIO are used only by the one-time setup scri
 | `minio-server` | the same MinIO image tag as the server | Pinned, since MinIO publishes no new images |
 | `tei-embedding`, `tei-reranker` | `ghcr.io/huggingface/text-embeddings-inference:cuda-1.9` | Profile `gpu`, started only with `--profile gpu` |
 | `vllm` | `vllm/vllm-openai:<pinned tag>` | Profile `gpu`; not needed if API models are used |
+| `roamate-routing` | Valhalla, pinned tag | Always started; also part of the server setup, since the server does not run it yet |
 
 Data lives in named Docker volumes, so `docker compose down` keeps it and `docker compose down -v` deletes it.
 
@@ -161,6 +176,14 @@ The settings are named `S3_*` rather than `MINIO_*` because the code speaks plai
 
 At least one provider in the chain must be reachable; the health page shows which ones are. The provider list format itself is designed in M0.8.
 
+### Routing
+
+| Setting | Example | Required |
+| --- | --- | --- |
+| `ROUTING_URL` | `http://localhost:8002` | no; without it the planner uses labeled distance estimates |
+| `ROUTING_TIMEOUT_SECONDS` | `10` | no |
+| `TRAFFIC_FACTOR_PEAK` | `1.3` | no; multiplies driving times in rush hours, since the engine has no live traffic |
+
 ### External data
 
 | Setting | Example | Required |
@@ -185,12 +208,13 @@ At least one provider in the chain must be reachable; the health page shows whic
     "storage":   {"ok": true,  "latency_ms": 4,  "detail": "3 of 3 buckets present"},
     "tei_embed": {"ok": true,  "latency_ms": 12, "detail": "jina-embeddings-v5-text-small-retrieval, dim 1024"},
     "tei_rerank":{"ok": true,  "latency_ms": 10, "detail": "bge-reranker-v2-m3"},
+    "routing":   {"ok": true,  "latency_ms": 6,  "detail": "valhalla, 1 city loaded"},
     "llm":       {"ok": false, "latency_ms": 2000, "detail": "local-gemma: timeout; openrouter-free: not configured"}
   }
 }
 ```
 
-`status` is `ok` when everything passes, `degraded` when an optional service fails (reranker, some LLM providers), and `down` when Postgres, Qdrant, storage or embeddings fail. The LLM check lists each provider in the chain without spending tokens: it calls the provider's model list endpoint. The web health page (M1.8) shows this as a table.
+`status` is `ok` when everything passes, `degraded` when an optional service fails (reranker, some LLM providers), and `down` when Postgres, Qdrant, storage or embeddings fail. A failing routing service counts as `degraded`, because the planner can fall back to estimates. The LLM check lists each provider in the chain without spending tokens: it calls the provider's model list endpoint. The web health page (M1.8) shows this as a table.
 
 ---
 
@@ -215,4 +239,5 @@ At least one provider in the chain must be reachable; the health page shows whic
 2. **MinIO image tag on the server** (`docker ps --format '{{.Image}}'`), so the fresh-machine setup matches it.
 3. **Where Roamate runs during development:** on the same server as the services (addresses stay `localhost`), or on your laptop connecting to the server (addresses become the server's IP, and the ports must be reachable)?
 4. **Qdrant API key:** does the server's Qdrant use one? If yes, Roamate gets the same key and stays separate by collection names, as in §2.
-5. **Port 8100** for the backend: free on the server?
+5. **Ports 8100** (backend) **and 8002** (routing): free on the server?
+6. **Routing engine:** OK to go with Valhalla (§2a)?

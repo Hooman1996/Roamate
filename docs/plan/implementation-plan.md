@@ -1,7 +1,7 @@
 # Roamate implementation plan
 
-**Version:** 2.2 (approved) · 24 October 2026
-**Builds on:** the [product brief](../background/product-brief.md) (18 Oct 2026), [pre-build decisions](../background/pre-build-decisions.md) and [solver, search and evaluation notes](../background/solver-retrieval-evaluation.md) (20 Oct 2026), the runnable [solver_example.py](../background/solver_example.py), and hooman's 11 changes and follow-up of 24 Oct 2026. Later design notes: [formulation, hotels, fares and TravelPlanner](../background/formulation-hotels-fares-travelplanner.md) (24 Oct 2026, proposals not yet in this plan).
+**Version:** 2.3 (approved) · 24 October 2026
+**Builds on:** the [product brief](../background/product-brief.md) (18 Oct 2026), [pre-build decisions](../background/pre-build-decisions.md) and [solver, search and evaluation notes](../background/solver-retrieval-evaluation.md) (20 Oct 2026), the runnable [solver_example.py](../background/solver_example.py), and hooman's 11 changes and follow-up of 24 Oct 2026. Later design notes: [formulation, hotels, fares and TravelPlanner](../background/formulation-hotels-fares-travelplanner.md) (24 Oct 2026, added to this plan in version 2.3).
 **Companion files:** [implementation-steps.md](implementation-steps.md) (every step title as a checklist) and the visual roadmap.
 
 ---
@@ -44,6 +44,7 @@ The brief's demo scenario, run in a browser: a user signs in, enters a 3-day tri
 | 9 | Embedding model to be chosen | §8. A measured comparison of candidate models in M8 |
 | 10 | All frontend files local, no internet needed for them | §11. Bundled packages and fonts, local map tiles, images served from our own object storage, and a build check |
 | 11 | Work on `main` for the early phases | §13. Direct commits to `main` until Web Alpha, then branches and pull requests |
+| 12 | Hotels, taxi fares, local routing and the TravelPlanner research track (decided 24 Oct 2026) | §4 routing service, §7 hotel and tariff data, §9 hotel collection, §10 hotel choice and fares, Research track R1–R3 |
 
 ---
 
@@ -56,7 +57,7 @@ We start with the smallest version of each piece and add a heavier tool only whe
 | Background work | A `planning_job` table; the API runs the graph as an asyncio background task; the web app polls the job every second | Redis + Celery or a separate worker process, if measurements in M12 show we need it |
 | Live progress | Polling `GET /jobs/{id}` | Server-Sent Events, if polling feels laggy |
 | Geography | Distances computed in Python (haversine × detour factor) | PostGIS, if spatial queries get slow |
-| Travel times | Estimates by mode from distance, labeled "estimated" | A routing engine (local OSRM/Valhalla or an API) behind an adapter |
+| Travel times | Walking and driving times and distances from our own routing service, built from each city's OpenStreetMap data; metro times estimated from distance and labeled "estimated" | Public transport times from timetable (GTFS) data through OpenTripPlanner |
 | Itinerary storage | The whole itinerary as JSON inside a trip version row | Normalized tables, only if we need to query inside itineraries |
 | LLM access | Our own small gateway over OpenAI-compatible endpoints | A routing library, only if our gateway stops being enough |
 | Travel profile | Defaults stored on the user | A separate profile model with history |
@@ -82,7 +83,8 @@ Roamate reuses the services that already run on the server for RagBot. It does n
 | Object storage | `minio-server` | Buckets prefixed `roamate-` with their own access key (see below) |
 | TEI embedding | `tei-embedding` (`text-embeddings-inference:cuda-1.9`, currently `jina-embeddings-v5-text-small-retrieval`) | Dense embeddings for places |
 | TEI reranker | `tei-reranker` (currently `bge-reranker-v2-m3`) | Re-ranking search candidates |
-| vLLM | `gemma4-vllm` (`vllm/vllm-openai`) | Local chat model, first in the fallback list |
+| vLLM | `gemma4-vllm` (`vllm/vllm-openai`) | Local chat model, the last fallback in the chain |
+| Routing | new: `roamate-routing` | Walking and driving distance and time matrices; built from each city's OpenStreetMap extract when the city is published; works offline. Engine (Valhalla or OSRM) chosen in M0.2 |
 
 All hosts, ports and credentials come from `.env`. For a fresh machine without these services, `infra/docker-compose.yml` starts the same images with the same names, so a new developer can run `docker compose -f infra/docker-compose.yml up -d` and get the same setup. The exact image tags are pinned there in M1.
 
@@ -190,7 +192,9 @@ These are drafts so the shape of the system is visible. Each one becomes a full 
 | `city` | id, slug, name, country, bbox, center_lat, center_lon, timezone, currency, status (`collecting` / `in_review` / `published`), tiles_object_key, published_at | One row per city |
 | `ingest_run` | id, city_id, stage, status, mode (`auto` / `semi`), params (JSON), stats (JSON), error, started_by, started_at, finished_at | Tracks each pipeline run so it can resume |
 | `place_candidate` | id, city_id, ingest_run_id, osm_id, wikidata_id, name, lat, lon, raw (JSON), proposed (JSON), field_sources (JSON), quality_score, status (`pending` / `approved` / `rejected` / `merged`), reviewed_by, reviewed_at | What the pipeline found, before review |
-| `place` | id, city_id, candidate_id, name, category, lat, lon, description, interest_tags (JSON), visit_minutes, price_per_person, opening_hours (JSON by weekday), popularity, accessibility_notes, website_url, booking_url, osm_id, wikidata_id, field_sources (JSON), updated_at | Published places the planner may use |
+| `place` | id, city_id, candidate_id, name, category, lat, lon, description, interest_tags (JSON), visit_minutes, price_per_person, opening_hours (JSON by weekday), popularity, rating, rating_count, iconic (0–1), accessibility_notes, website_url, booking_url, osm_id, wikidata_id, field_sources (JSON), updated_at | Published places the planner may use |
+| `hotel` | id, city_id, osm_id, name, lat, lon, stars, features (JSON: breakfast, pool, parking, step-free access, …), price_per_night_estimate, price_source, price_fetched_at, rating, rating_count, field_sources (JSON), status | Hotels the planner may suggest; prices are labeled estimates until a provider is connected |
+| `city_tariff` | id, city_id, mode (`taxi` / `transit`), valid_from, valid_to, flag_fall, per_km, per_min, surcharges (JSON: night, holiday, large vehicle), single_ticket_price, day_pass_price, source_url, entered_by | Regulated fares, one row per city, mode and period |
 | `media_asset` | id, place_id, city_id, kind (`exact_venue` / `area` / `generic_city` / `ai_decorative`), object_key, original_url, license, author, attribution_text, width, height | Images in object storage with their credits |
 | `trip` | id, user_id, city_id, title, created_at, current_version_id, approved_version_id | A user's trip |
 | `trip_version` | id, trip_id, parent_version_id, number, brief (JSON), scenarios (JSON), selected_scenario, story (JSON), change_summary, status (`draft` / `approved`), created_at | Immutable plan versions |
@@ -212,15 +216,19 @@ The embedding model's name is part of the collection name. Switching models mean
 | --- | --- | --- |
 | `roamate-media` | `cities/{city_slug}/places/{place_id}/{asset_id}.{ext}` plus `…/{asset_id}_thumb.webp` | Served to the app through the backend |
 | `roamate-tiles` | `cities/{city_slug}/basemap.pmtiles` | Served to the map through the backend |
+| `roamate-routing` | `cities/{city_slug}/{extract}.osm.pbf` and the built routing data | Private; input for the routing service |
 | `roamate-raw` | `ingest/{run_id}/{stage}/{file}.json` | Private; raw API responses for repeatable runs |
 
 ### Domain data structures (Pydantic)
 
 - **`TripBrief`**: city_id, start_date, end_date, travelers, budget (amount, currency, scope, covered categories), known_costs, interests (interest → weight), pace (`relaxed` / `normal` / `packed`), transport (walk, metro, taxi allowed), max_walk_minutes_per_day, day_start, day_end, hotel location, must_do, excluded, notes.
+- **`HotelChoice`**, part of `TripBrief`: either a **fixed hotel** (already booked: a hotel id or an address and location) or **`HotelPreferences`**: required features (hard filter), nice-to-have features with weights, price cap per night, preferred area.
+- **`UtilityFeatures`** per candidate place: interest match, reranker score (normalized within the query), quality (Bayesian-averaged rating), iconic. Kept separate from raw search scores, which only decide which places reach the solver.
 - **`Stop`**, **`DayPlan`**, **`Itinerary`**: ordered stops with arrive/depart times, travel from the previous stop (mode, minutes, walking, cost), lunch break, return time.
-- **`Scenario`**: name, parameters used, itinerary, budget breakdown, metrics, skipped places with reasons, validation report.
+- **`Scenario`**: name, parameters used, chosen hotel and the runner-up hotels with their totals, itinerary, budget breakdown, metrics, skipped places with reasons, validation report.
 - **`BudgetBreakdown`**: lines by category marked `quoted` / `estimated` / `unknown` / `excluded`, totals, currency, scope text.
 - **`ValidationReport`**: named checks with pass/fail and details.
+- **`ConflictReport`**: when no plan is possible, the smallest set of the traveler's constraints that clash, and the relaxations to offer (e.g. drop a must-do, allow taxis, raise the budget by a shown amount).
 - **`ConstraintDelta`**: the structured form of a change request (e.g. day 2 walking cap 40 min, lock stop X, remove stop Y).
 - **`ProgressEvent`**: step, message, time, optional partial result.
 
@@ -295,17 +303,18 @@ Adding a city is one command or one button: `python -m scripts.ingest_city "Lisb
 | Stage | What it does | Output |
 | --- | --- | --- |
 | 1. Discover | Look up the city in Nominatim and Wikidata: boundary, bounding box, center, timezone, currency | `city` row (status `collecting`) |
-| 2. Collect | Query Overpass for tourist categories (museums, monuments, viewpoints, parks, markets, galleries, historic sites, food spots) and Wikidata for notable items inside the boundary | Raw responses in `roamate-raw`, rows in `place_candidate` |
+| 2. Collect | Query Overpass for tourist categories (museums, monuments, viewpoints, parks, markets, galleries, historic sites, food spots) and for accommodation (hotels, hostels, guest houses), and Wikidata for notable items inside the boundary | Raw responses in `roamate-raw`, rows in `place_candidate` |
 | 3. Merge | Join OSM and Wikidata records (by Wikidata tag, then name and distance); remove duplicates | One candidate per real place |
-| 4. Enrich | Wikipedia summary, Wikimedia Commons images with license and author (downloaded to `roamate-media`), parsed OSM opening hours, website. The LLM proposes interest tags, typical visit time and price band, each marked `estimated_by_llm` | Filled `proposed` fields with sources |
+| 4. Enrich | Wikipedia summary, Wikimedia Commons images with license and author (downloaded to `roamate-media`), parsed OSM opening hours, website. Hotels get their features from OSM tags and a labeled nightly price estimate. The LLM proposes interest tags, typical visit time and price band, each marked `estimated_by_llm` | Filled `proposed` fields with sources |
 | 5. Score | Popularity (Wikipedia language links, page views) and completeness (required fields present) | `quality_score` per candidate |
 | 6. Review | **Semi mode:** the admin review screen lists candidates by score with missing fields highlighted; approve in bulk, edit, reject. **Auto mode:** approve every candidate above a score threshold that has all required fields | Approved candidates |
-| 7. Publish | Copy approved candidates into `place` and `media_asset`, embed and upsert into Qdrant, extract the city's map file (PMTiles) into `roamate-tiles`, set the city to `published` | A city the planner can use |
+| 7. Publish | Copy approved candidates into `place` and `media_asset`, embed and upsert into Qdrant, extract the city's map file (PMTiles) into `roamate-tiles`, build the city's routing data, set the city to `published` | A city the planner can use |
 
 Rules:
 
 - Respect the public services' usage policies (Nominatim at most one request per second, polite Overpass use) and cache raw responses so re-runs don't call them again.
 - Only store media whose license allows it, and always keep the author and license for display.
+- The admin enters the city's taxi tariff and public transport ticket prices on the Cities screen, copied from the official source, with its link and valid dates. The city cannot be published without them.
 - Required fields for a place to be usable by the planner: coordinates, category, visit time, at least one interest tag, and opening hours or an explicit "hours unknown".
 
 The first city is chosen in M0 (Lisbon is the default). A second city is added in M6 to prove that adding a city needs no code changes.
@@ -329,6 +338,8 @@ The whole planning flow is one LangGraph graph from its first version.
                retrieve candidates (Qdrant hybrid + rerank + utility)
                        ▼
                live context (weather)
+                       ▼
+               choose hotel (fixed, or shortlist → solve per hotel → best total)
                        ▼
        ┌───────────────┼───────────────┐
    solve Budget   solve Balanced   solve Comfort      (parallel)
@@ -357,10 +368,13 @@ The whole planning flow is one LangGraph graph from its first version.
 - Constraints: opening hours by weekday, day start/end, a 60-minute lunch break, hard budget, walking cap per day, stops per day (pace), balanced days.
 - Scenarios: three parameter sets plus a diversity rule (each differs by at least two places). If three meaningfully different plans do not exist, the app says so.
 - Tests use a fixed solution limit instead of a time limit so results repeat.
+- **Utility** (first, hand-written version): $u_i = 100 \cdot (w_1\,\text{interest match} + w_2\,\text{rerank} + w_3\,\text{quality} + w_4\,\text{iconic})$. Price and duration stay out of $u_i$ because the solver already charges for money and time. Simple caps (e.g. at most two museums a day) stop repetition. A learned version replaces it only if it beats this one on held-out data.
+- **Hotel choice:** when the hotel is already booked it is the fixed start and end of every day. Otherwise: filter hotels by required features and price cap, shortlist the top 5–10 by feature match, rating and location, solve the trip from each shortlisted hotel with Balanced weights and the money left after the nights, and pick the best total (trip objective + money weight × hotel cost − hotel bonus). The three scenarios are then solved from the chosen hotel, and the runner-up hotels are shown so the traveler sees the trade-off.
+- **Fares:** taxi fare per leg = flag fall + per-km × road km + per-minute × road minutes, from the city's tariff and the routing matrix, times a time-of-day factor, shown as a range. Public transport: single tickets, or a day pass modeled as one yes/no per day (pay once if any transit leg is used that day). The mode per leg is the one with the lowest weighted cost of time, money and walking, with both options offered to the solver when the budget is tight.
 
 ### Validator and infeasibility
 
-The validator is separate code that recomputes timings and costs from the catalog and checks opening hours, day window, lunch, duplicates, must-dos, budget, walking cap, pace and time continuity. Hypothesis tests plant violations and the validator must catch every one. The feasibility precheck explains common conflicts before solving and offers concrete choices; hard limits are never relaxed without the user agreeing.
+The validator is separate code that recomputes timings and costs from the catalog and checks opening hours, day window, lunch, duplicates, must-dos, budget, walking cap, pace and time continuity. Hypothesis tests plant violations and the validator must catch every one. The feasibility precheck explains common conflicts before solving. When the solver still finds no plan, the conflict finder solves small versions of the problem with constraints switched on and off to find the smallest set that clashes (an unsatisfiable core, as in Hao et al.), and turns it into a `ConflictReport` with concrete choices. Hard limits are never relaxed without the user agreeing.
 
 ---
 
@@ -427,27 +441,27 @@ Providers from `config/models.yaml`, ordered fallback with cool-down, structured
 *You can test:* Lab → Models: send a test prompt, stop vLLM, and watch the next provider answer, with each attempt listed.
 
 **M5. City data pipeline (L)**
-Discover, collect, merge, enrich, score, with resumable stages, raw data in object storage, images with licenses, LLM-estimated fields marked, and a command-line entry point.
+Discover, collect, merge, enrich, score, with resumable stages, raw data in object storage, images with licenses, hotels with features and labeled price estimates, LLM-estimated fields marked, and a command-line entry point.
 *You can test:* run the ingest command for the launch city and inspect the candidates, their sources and images.
 
 **M6. City review and publishing (L)**
-Admin Cities and Review screens, auto-approve rules, publish to Postgres, Qdrant and object storage, local map tiles, the launch city reviewed and published, a second city added through the UI only.
+Admin Cities and Review screens, taxi and transit tariff entry, auto-approve rules, publish to Postgres, Qdrant and object storage, local map tiles, the routing service with the city's routing data, the launch city reviewed and published, a second city added through the UI only.
 *You can test:* Admin → Cities → Add city, follow the stages, approve places in Review, publish, and see the city's places on its local map.
 
 ### Phase 4 — Planning engine
 
 **M7. Solver and scenarios (M)**
-Utility scoring, travel estimates, OR-Tools model on catalog data, all constraints, three scenarios with the diversity rule, deterministic test mode, Lab → Solver page.
-*You can test:* Lab → Solver: pick a city and a sample brief, change weights and caps, and compare Budget, Balanced and Comfort.
+Utility scoring from separate features, travel matrices from the routing service, tariff-based taxi fares and the transit day pass, OR-Tools model on catalog data, all constraints, hotel shortlist and per-hotel solve, three scenarios with the diversity rule, deterministic test mode, Lab → Solver page.
+*You can test:* Lab → Solver: pick a city and a sample brief, ask for a hotel with breakfast, change weights and caps, and compare the hotel totals and the Budget, Balanced and Comfort plans.
 
 **M8. Validator, budget and search (M)**
-Independent validator with Hypothesis tests, budget breakdown, feasibility precheck, Qdrant hybrid search with reranking feeding utility, retrieval label set, embedding model comparison, Lab → Validator and Lab → Search pages.
+Independent validator with Hypothesis tests, budget breakdown including the hotel nights, feasibility precheck, conflict finder, Qdrant hybrid search with reranking feeding utility, retrieval label set, embedding model comparison, Lab → Validator and Lab → Search pages.
 *You can test:* break an itinerary in Lab → Validator and see it caught; compare search methods and embedding models with measured recall in Lab → Search.
 
 ### Phase 5 — AI workflow and web app ("Web Alpha")
 
 **M9. LangGraph planning workflow (L)**
-Graph state and nodes for the form path, intake node with clarify pause, confirm pause, parallel scenarios, validate and repair loop, budget, curation and story nodes, Postgres checkpoints and resume, job runner and job API, weather provider, intake eval set, Lab → Intake and Lab → Runs pages.
+Graph state and nodes for the form path, intake node (including hotel preferences) with clarify pause, hotel node, confirm pause, parallel scenarios, validate and repair loop, budget, curation and story nodes, Postgres checkpoints and resume, job runner and job API, weather provider, intake eval set, Lab → Intake and Lab → Runs pages.
 *You can test:* start a plan through `/docs` or Lab → Runs, answer a clarification, restart the backend mid-run and see it resume.
 
 **M10. Web app: plan, explore, save (L)**
@@ -464,6 +478,22 @@ Revision graph with `ConstraintDelta`, stop locks, "what changed" diff, version 
 Persona-based evaluation harness, graders, regression suite in CI, metamorphic solver tests, p50/p95 timings, provider quota and failure tracking, friendly errors, accessibility pass, a worker process or Celery only if measurements require it, deployment on the server next to the existing services, Lab → Evals page, a few testers.
 *You can test:* the deployed web app from another computer; the Evals page shows violation rate, intake accuracy, recall and latency.
 
+### Research track — TravelPlanner (alongside M11–M12)
+
+This track starts after Web Alpha and runs next to M11 and M12. It reuses the model gateway, the validator idea and the evaluation tooling. It does not change the traveler app. Background and the paper question: [formulation, hotels, fares and TravelPlanner](../background/formulation-hotels-fares-travelplanner.md), §5.
+
+**R1. TravelPlanner setup and baseline (S)**
+Download the dataset (train 45, validation 180, test 1,000 queries) and its sandbox database, run the official validation scorer in the manual evaluation workflow, record published baselines, and write down the paper claim before any experiment (quality beyond pass rate, small free models, or a city-level benchmark).
+*You can test:* run the official scorer on a sample submission and see delivery, commonsense, hard-constraint and final pass rates.
+
+**R2. TravelPlanner adapter and solver mode (L)**
+Query → Roamate constraint spec (a JSON schema filled by the LLM through the gateway, not generated solver code), a loader for the sandbox data, a CP-SAT model for TravelPlanner's multi-city, day-level plans (city order, inter-city transport, one accommodation per city with room type, house rules and minimum nights, meals, attractions, budget), a renderer to the official submission JSONL, and a validator for its constraints.
+*You can test:* run the 180 validation queries and get a scored submission file.
+
+**R3. Experiments and submission (M)**
+Results table per model in the chain (pass rates, plan cost and quality, LLM cost per query), optional second benchmark TripScore, a single final test-set submission to the official leaderboard, and a workshop-paper draft. Follows the benchmark's rules: no tuning on the test set.
+*You can test:* the Lab → Evals page shows the TravelPlanner table per model, and the leaderboard shows the one submission.
+
 ### Phase 7 — Mobile app
 
 **M13. Mobile app core (L)**
@@ -476,7 +506,7 @@ Offline view of saved trips, accessibility and slow-network checks, app icon and
 
 ### Later (not planned in detail yet)
 
-Password reset by email, private group planning (invite, vote, lock, approve), share links and "Make this trip mine", learned ranking from saves and skips, visit-duration prediction, local routing engine, booking integrations after separate validation.
+Password reset by email, private group planning (invite, vote, lock, approve), share links and "Make this trip mine", learned ranking from saves and skips, visit-duration prediction, public transport routing with GTFS (OpenTripPlanner), moving between hotels or cities in one trip, booking integrations after separate validation.
 
 ---
 
@@ -517,6 +547,8 @@ Password reset by email, private group planning (invite, vote, lock, approve), s
 | Web | Form validation, linked selection, labels, route guards | Vitest + Testing Library |
 | Local assets | Built app has no external URLs | CI build check |
 | End to end | Sign in → plan → explore → revise → approve → reopen | Playwright |
+| Hotel choice and fares | Per-hotel solve picks the best total; fares match the tariff formula; the day pass is charged once per day | pytest |
+| TravelPlanner | Official validation scorer on our submission files | Official evaluation script, manual workflow |
 | Quality over time | Intake accuracy, recall@50, violation rate, persona pass rate, latency, cost | `evals/` + Lab → Evals |
 
 CI uses fake model providers, so it never needs API keys or a GPU. Real-model evaluations run in a separate, manually started workflow or on the server.
@@ -536,3 +568,7 @@ CI uses fake model providers, so it never needs API keys or a GPU. Real-model ev
 | Embedding model licenses | Jina v5 is non-commercial (CC BY-NC 4.0); EmbeddingGemma-2 and Qwen3-Embedding are Apache 2.0. Fine for development; revisit before any commercial launch |
 | MinIO's open-source project is archived and gets no updates | Decided to stay with the running MinIO image; plain S3 code via boto3 keeps a later switch (SeaweedFS first) to a config change |
 | Scope creep into social features | Social and booking stay in "Later" |
+| Hotel prices are estimates until a booking provider is connected | Labeled `Estimated` everywhere; the budget view shows the hotel line as an estimate |
+| Taxi tariffs change | Stored with source link and valid dates; the admin updates them; fares shown as a range |
+| Routing service is one more service to run | Built from the same OpenStreetMap extract as the catalog; if it is down, the planner falls back to distance estimates labeled `Estimated` |
+| The research track pulls time from the product | Starts only after Web Alpha; the claim is fixed in R1 before experiments; one final test-set submission |

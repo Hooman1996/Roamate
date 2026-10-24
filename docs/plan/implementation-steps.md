@@ -1,6 +1,6 @@
 # Roamate implementation steps
 
-**Version:** 2.2 (approved) · 24 October 2026
+**Version:** 2.3 (approved) · 24 October 2026
 
 Every step starts only after its design is approved (M0) and its short step brief gets a go-ahead. Until Web Alpha (end of M10), steps are committed directly to `main`; after that, each step is a branch named after its ID (`m11-2-stop-locks`) and a pull request. Details for each milestone are in [implementation-plan.md](implementation-plan.md).
 
@@ -8,11 +8,11 @@ Every step starts only after its design is approved (M0) and its short step brie
 
 ### M0. Design and approval
 - [x] **M0.1** Approve the implementation plan (approved 24 Oct 2026)
-- [ ] **M0.2** Design: infrastructure, shared services, conda environment and `.env` settings
+- [ ] **M0.2** Design: infrastructure, shared services, routing service, conda environment and `.env` settings
 - [ ] **M0.3** Design: PostgreSQL schema (every table, column, index, with examples)
 - [ ] **M0.4** Design: Qdrant collections, vectors and payload indexes
 - [ ] **M0.5** Design: MinIO buckets, object layout and access rules
-- [ ] **M0.6** Design: domain data structures (TripBrief, Itinerary, Scenario, BudgetBreakdown, ValidationReport, ConstraintDelta)
+- [ ] **M0.6** Design: domain data structures (TripBrief with HotelChoice, UtilityFeatures, Itinerary, Scenario, BudgetBreakdown, ValidationReport, ConflictReport, ConstraintDelta)
 - [ ] **M0.7** Design: accounts, sessions, roles and sign-in flows
 - [ ] **M0.8** Design: model gateway: provider config format, chain order and fallback rules
 - [ ] **M0.9** Design: city ingestion stages, review rules and auto-approve thresholds
@@ -70,35 +70,40 @@ Every step starts only after its design is approved (M0) and its short step brie
 - [ ] **M5.3** Write the Collect stage (Overpass and Wikidata) with raw data saved to object storage
 - [ ] **M5.4** Write the Merge stage (OSM–Wikidata matching and duplicates)
 - [ ] **M5.5** Write the Enrich stage: Wikipedia summaries, Commons images with licenses, opening hours
-- [ ] **M5.6** Add LLM-estimated tags, visit times and price bands, marked as estimates
-- [ ] **M5.7** Write the Score stage (popularity and completeness)
-- [ ] **M5.8** Add the `ingest_city` command and stage tests on recorded data
+- [ ] **M5.6** Collect hotels with features from OSM tags and labeled nightly price estimates
+- [ ] **M5.7** Add LLM-estimated tags, visit times and price bands, marked as estimates
+- [ ] **M5.8** Write the Score stage (popularity, rating, iconic status and completeness)
+- [ ] **M5.9** Add the `ingest_city` command and stage tests on recorded data
 
 ### M6. City review and publishing
 - [ ] **M6.1** Build the Admin → Cities page with add city and stage progress
-- [ ] **M6.2** Build the Admin → Review page (bulk approve, edit, reject, gaps highlighted)
-- [ ] **M6.3** Add auto-approve rules for auto mode
-- [ ] **M6.4** Write the Publish stage: places and media to Postgres, vectors to Qdrant
-- [ ] **M6.5** Extract the city map file (PMTiles) and serve it with local map styles
-- [ ] **M6.6** Ingest, review and publish the launch city
-- [ ] **M6.7** Add a second city through the UI only and record what was needed
+- [ ] **M6.2** Build the Admin → Review page for places and hotels (bulk approve, edit, reject, gaps highlighted)
+- [ ] **M6.3** Add the tariff form: taxi tariff and transit ticket prices with source link and valid dates
+- [ ] **M6.4** Add auto-approve rules for auto mode
+- [ ] **M6.5** Write the Publish stage: places, hotels and media to Postgres, vectors to Qdrant
+- [ ] **M6.6** Extract the city map file (PMTiles) and serve it with local map styles
+- [ ] **M6.7** Set up the routing service and build the city's routing data when publishing
+- [ ] **M6.8** Ingest, review and publish the launch city
+- [ ] **M6.9** Add a second city through the UI only and record what was needed
 
 ## Phase 4 — Planning engine
 
 ### M7. Solver and scenarios
-- [ ] **M7.1** Write utility scoring from interest tags and popularity
-- [ ] **M7.2** Write travel estimates by mode (walk, metro, taxi) from distance
-- [ ] **M7.3** Port the OR-Tools model from `solver_example.py` to `planning/solver.py` on catalog data
-- [ ] **M7.4** Add opening hours by weekday, lunch, must-dos, budget, walking cap and pace
-- [ ] **M7.5** Add Budget, Balanced and Comfort parameter sets and the diversity rule
-- [ ] **M7.6** Add deterministic test mode and solver tests on the sample briefs
-- [ ] **M7.7** Build the Lab → Solver page
+- [ ] **M7.1** Write utility scoring from separate features (interest match, rerank, quality, iconic)
+- [ ] **M7.2** Get walking and driving matrices from the routing service, with labeled distance estimates as fallback
+- [ ] **M7.3** Add taxi fares from the city tariff and the transit day pass
+- [ ] **M7.4** Port the OR-Tools model from `solver_example.py` to `planning/solver.py` on catalog data
+- [ ] **M7.5** Add opening hours by weekday, lunch, must-dos, budget, walking cap, pace and category caps
+- [ ] **M7.6** Add the hotel filter, shortlist and per-hotel solve with the best-total choice
+- [ ] **M7.7** Add Budget, Balanced and Comfort parameter sets and the diversity rule
+- [ ] **M7.8** Add deterministic test mode and solver tests on the sample briefs
+- [ ] **M7.9** Build the Lab → Solver page
 
 ### M8. Validator, budget and search
 - [ ] **M8.1** Write the independent validator
 - [ ] **M8.2** Add property-based validator tests with Hypothesis
-- [ ] **M8.3** Write the budget breakdown with scope and quoted/estimated/unknown labels
-- [ ] **M8.4** Write the feasibility precheck with clear user choices
+- [ ] **M8.3** Write the budget breakdown with hotel nights, scope and quoted/estimated/unknown labels
+- [ ] **M8.4** Write the feasibility precheck and the conflict finder (smallest set of clashing constraints) with clear user choices
 - [ ] **M8.5** Write hybrid search (dense + BM25) with reranking feeding utility
 - [ ] **M8.6** Label 20–30 briefs with good candidate places
 - [ ] **M8.7** Compare embedding models and search methods by recall@50 and pick the model
@@ -110,22 +115,23 @@ Every step starts only after its design is approved (M0) and its short step brie
 - [ ] **M9.1** Define the graph state and the form-path graph (precheck, retrieve, solve, validate, save)
 - [ ] **M9.2** Add Postgres checkpoints and resume after restart
 - [ ] **M9.3** Write the job runner and job API (start, status, events, resume)
-- [ ] **M9.4** Add the intake node (free text → TripBrief) with versioned prompts
+- [ ] **M9.4** Add the intake node (free text → TripBrief, including hotel preferences) with versioned prompts
 - [ ] **M9.5** Add the clarify and confirm pauses
-- [ ] **M9.6** Run the three scenarios in parallel
-- [ ] **M9.7** Add the validate and repair loop (max 2 tries)
-- [ ] **M9.8** Add the weather provider (forecast vs seasonal, cached)
-- [ ] **M9.9** Add the curation node ("why this fits you")
-- [ ] **M9.10** Add the story node, bound to the validated itinerary
-- [ ] **M9.11** Build the 30-case intake eval set and scoring script
-- [ ] **M9.12** Build the Lab → Intake and Lab → Runs pages
+- [ ] **M9.6** Add the hotel node (fixed hotel, or shortlist and choose)
+- [ ] **M9.7** Run the three scenarios in parallel
+- [ ] **M9.8** Add the validate and repair loop (max 2 tries)
+- [ ] **M9.9** Add the weather provider (forecast vs seasonal, cached)
+- [ ] **M9.10** Add the curation node ("why this fits you")
+- [ ] **M9.11** Add the story node, bound to the validated itinerary
+- [ ] **M9.12** Build the 30-case intake eval set and scoring script
+- [ ] **M9.13** Build the Lab → Intake and Lab → Runs pages
 
 ### M10. Web app: plan, explore, save
 - [ ] **M10.1** Build the app shell, navigation and API client with TanStack Query
 - [ ] **M10.2** Build the new-trip page: free-text box and step form
 - [ ] **M10.3** Build the clarify and confirm screens
 - [ ] **M10.4** Build the planning progress screen
-- [ ] **M10.5** Build the trip view with the scenario switcher
+- [ ] **M10.5** Build the trip view with the scenario switcher and the hotel choice with runner-ups
 - [ ] **M10.6** Build the Story tab with media labels and credits
 - [ ] **M10.7** Build the Timeline tab
 - [ ] **M10.8** Build the Map tab with MapLibre and the city's local tiles
@@ -159,6 +165,30 @@ Every step starts only after its design is approved (M0) and its short step brie
 - [ ] **M12.9** Deploy the backend and web app on the server next to the existing services
 - [ ] **M12.10** Build the Lab → Evals page
 - [ ] **M12.11** Run the Web Beta with a few testers and collect feedback
+
+## Research track — TravelPlanner (alongside M11–M12)
+
+### R1. TravelPlanner setup and baseline
+- [ ] **R1.1** Download the TravelPlanner dataset and sandbox database
+- [ ] **R1.2** Run the official validation scorer in the manual evaluation workflow
+- [ ] **R1.3** Record the published baselines
+- [ ] **R1.4** Write the paper claim and experiment plan (for approval)
+
+### R2. TravelPlanner adapter and solver mode
+- [ ] **R2.1** Design: TravelPlanner constraint spec schema (for approval)
+- [ ] **R2.2** Write the query → constraint spec adapter through the model gateway
+- [ ] **R2.3** Load the sandbox data (flights, distances, restaurants, attractions, accommodation)
+- [ ] **R2.4** Write the CP-SAT model for multi-city, day-level plans
+- [ ] **R2.5** Write the validator for TravelPlanner's commonsense and hard constraints
+- [ ] **R2.6** Render plans to the official submission JSONL
+- [ ] **R2.7** Score the 180 validation queries
+
+### R3. Experiments and submission
+- [ ] **R3.1** Run the validation set for each model in the chain
+- [ ] **R3.2** Build the results table (pass rates, plan cost and quality, cost per query) on Lab → Evals
+- [ ] **R3.3** Optional: run the TripScore benchmark
+- [ ] **R3.4** Submit the test set once to the official leaderboard
+- [ ] **R3.5** Write the workshop-paper draft
 
 ## Phase 7 — Mobile app
 
