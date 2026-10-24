@@ -209,7 +209,7 @@ MinIO stopped publishing community Docker images and binaries in October 2025 an
 
 ```
 roamate/
-├── AGENTS.md                 how work is done here (CLAUDE.md imports it)
+├── AGENTS.md                 how work is done here, for people and coding agents
 ├── environment.yml           conda env "roamate"
 ├── .env.example              every setting with a comment, no secrets
 ├── config/
